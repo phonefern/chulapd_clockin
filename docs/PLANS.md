@@ -9,6 +9,9 @@ Numbered plan documents for Codex to implement from. See each file's own structu
 | PLAN-003 | [PLAN_003_ADMIN_STATS_DASHBOARD.md](./PLAN_003_ADMIN_STATS_DASHBOARD.md) | Implemented | New `/admin/stats` page: 7d/30d/custom range, KPI cards, headcount + avg-hours bar charts (shadcn `chart.tsx` + recharts), per-employee range summary table |
 | PLAN-004 | [PLAN_004_EMPLOYEES_PAGE_ENHANCEMENTS.md](./PLAN_004_EMPLOYEES_PAGE_ENHANCEMENTS.md) | Implemented | `/admin/employees` gains search, sortable columns, a "today's status" column, and a Card-wrapped layout to match `/admin`'s polish. Explicitly rejects manual employee pre-registration (doesn't merge cleanly with the LINE-login upsert) |
 | PLAN-005 | [PLAN_005_PREVENT_ACCIDENTAL_EARLY_CLOCK_OUT.md](./PLAN_005_PREVENT_ACCIDENTAL_EARLY_CLOCK_OUT.md) | Implemented | Confirmation dialog on clock-out before 16:00 (30 min before standard 16:30 end-of-day) + 2-minute undo window. Explicitly rejects building the full `attendance_adjustments` request/approve workflow now — schema exists, zero UI/API touches it yet, seeded as a future plan |
+| PLAN-006 | [PLAN_006_MONTHLY_EXPORT_AND_PRINT.md](./PLAN_006_MONTHLY_EXPORT_AND_PRINT.md) | Ready | New `/admin/export`: monthly daily-ledger table (one row per employee per work day), CSV download (UTF-8 BOM for Excel Thai text) + browser print-to-sign view with a signature line. Separate page from `/admin/stats` on purpose — a certification ledger and a trend dashboard are different documents |
+| PLAN-007 | [PLAN_007_EMPLOYEE_SELF_STATS.md](./PLAN_007_EMPLOYEE_SELF_STATS.md) | Ready | LIFF app gains an in-page "ประวัติของฉัน" toggle (no new route — avoids re-triggering `liff.init()`) showing the employee's own monthly days-present/hours/on-time stats. Introduces shared `getEmployeeMonthSummary()` helper that [[PLAN-008]] also calls |
+| PLAN-008 | [PLAN_008_LINE_OA_KEYWORD_REPLY.md](./PLAN_008_LINE_OA_KEYWORD_REPLY.md) | Ready (depends on 007's shared helper) | Extends the existing `follow`-only webhook with a `message`/text branch: fixed Thai keyword set ("วันนี้"/"เดือนนี้"/etc.) replies with today's status or month summary. No free-text NLU by design |
 
 ## Suggested implementation order
 
@@ -17,6 +20,9 @@ Numbered plan documents for Codex to implement from. See each file's own structu
 3. **PLAN-004** (employees polish) — independent of 002/003 beyond the nav link, can run in parallel
 4. **PLAN-003** (stats page) — depends on 002's date-parsing convention
 5. **PLAN-005** (accidental clock-out) — fully independent, can run anytime
+6. **PLAN-006** (monthly export) — independent of 002/003/005, reuses `workDate.ts` helpers only
+7. **PLAN-007** (employee self stats) — independent, but land before 008
+8. **PLAN-008** (LINE keyword reply) — depends on 007's `getEmployeeMonthSummary()` helper
 
 ## Conventions
 

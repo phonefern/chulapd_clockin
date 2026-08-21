@@ -2,10 +2,12 @@ import { BANGKOK_TIME_ZONE } from "@/lib/workDate";
 
 export const WORK_END_HOUR = 16;
 export const WORK_END_MINUTE = 30;
+export const WORK_START_HOUR = 8;
+export const WORK_START_MINUTE = 30;
 export const EARLY_CLOCK_OUT_THRESHOLD_MINUTES = 30;
 export const CLOCK_OUT_UNDO_WINDOW_MS = 2 * 60 * 1000;
 
-function getBangkokTimeParts(date: Date) {
+export function getBangkokTimeParts(date: Date) {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: BANGKOK_TIME_ZONE,
     hour: "2-digit",

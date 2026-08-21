@@ -163,3 +163,31 @@ a {
     @apply font-sans;
   }
 }
+
+@media print {
+  html,
+  body {
+    max-width: none;
+    overflow: visible;
+    background: white;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-ledger {
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .print-row {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-signature {
+    display: block !important;
+    break-inside: avoid;
+  }
+}

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowRight, BarChart3, Clock3, FileClock, Users, UserCheck } from "lucide-react";
+import { ArrowRight, BarChart3, Clock3, FileClock, FileDown, Users, UserCheck } from "lucide-react";
 import { AutoRefresh } from "@/components/admin/auto-refresh";
 import { DateNav } from "@/components/admin/date-nav";
 import { BrandMark } from "@/components/brand-mark";
@@ -113,6 +113,11 @@ export default async function AdminPage({
             <Link href="/admin/stats" className={cn(buttonVariants({ variant: "outline" }), "gap-2")}>
               <BarChart3 className="size-4" />
               สถิติ
+              <ArrowRight className="size-4" />
+            </Link>
+            <Link href="/admin/export" className={cn(buttonVariants({ variant: "outline" }), "gap-2")}>
+              <FileDown className="size-4" />
+              ส่งออก
               <ArrowRight className="size-4" />
             </Link>
             <Link href="/admin/employees" className={cn(buttonVariants({ variant: "outline" }), "gap-2")}>

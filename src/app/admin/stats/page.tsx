@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft, Users, UserCheck, Clock3 } from "lucide-react";
+import { ArrowLeft, Clock3, FileDown, Users, UserCheck } from "lucide-react";
 import { AttendanceCharts, type AttendanceChartPoint } from "@/components/admin/attendance-charts";
 import { RangePicker } from "@/components/admin/range-picker";
 import { BrandMark } from "@/components/brand-mark";
@@ -197,6 +197,10 @@ export default async function AdminStatsPage({
             <Link href="/admin" className={cn(buttonVariants({ variant: "outline" }), "gap-2")}>
               <ArrowLeft className="size-4" />
               Attendance วันนี้
+            </Link>
+            <Link href="/admin/export" className={cn(buttonVariants({ variant: "outline" }), "gap-2")}>
+              <FileDown className="size-4" />
+              ส่งออก
             </Link>
             <RangePicker from={from} to={to} today={today} />
           </div>

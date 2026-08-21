@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Clock3, LocateFixed, MapPin, RefreshCw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clock3, History, LocateFixed, MapPin, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { BrandMark } from "@/components/brand-mark";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +50,27 @@ type Attendance = {
   status: string;
 };
 
+type HistoryRow = {
+  work_date: string;
+  clock_in_at: string | null;
+  clock_out_at: string | null;
+  total_minutes: number | null;
+  status: string | null;
+};
+
+type MyStats = {
+  month: string;
+  currentMonth: string;
+  joinMonth: string;
+  summary: {
+    daysPresent: number;
+    totalMinutes: number;
+    missingClockOutDays: number;
+    onTimeDays: number;
+    rows: HistoryRow[];
+  };
+};
+
 type Geofence = {
   allowed: boolean;
   distanceMeters: number | null;
@@ -73,6 +94,54 @@ function formatTime(iso: string) {
   }).format(new Date(iso));
 }
 
+function formatMaybeTime(iso: string | null) {
+  return iso ? formatTime(iso) : "-";
+}
+
+function formatMinutes(totalMinutes: number | null) {
+  if (totalMinutes === null) return "-";
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${h}:${String(m).padStart(2, "0")}`;
+}
+
+function formatShortDate(date: string) {
+  return new Intl.DateTimeFormat("th-TH-u-ca-buddhist", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Asia/Bangkok",
+  }).format(new Date(`${date}T00:00:00+07:00`));
+}
+
+function formatMonth(month: string) {
+  return new Intl.DateTimeFormat("th-TH-u-ca-buddhist", {
+    month: "long",
+    year: "numeric",
+    timeZone: "Asia/Bangkok",
+  }).format(new Date(`${month}-01T00:00:00+07:00`));
+}
+
+function formatMonthKeyInBangkok(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    month: "2-digit",
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  return `${year}-${month}`;
+}
+
+function currentBangkokMonth() {
+  return formatMonthKeyInBangkok(new Date());
+}
+
+function addMonth(month: string, delta: number) {
+  const date = new Date(`${month}-01T00:00:00+07:00`);
+  date.setUTCMonth(date.getUTCMonth() + delta);
+  return formatMonthKeyInBangkok(date);
+}
+
 function formatDuration(ms: number) {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
   const h = String(Math.floor(totalSeconds / 3600)).padStart(2, "0");
@@ -91,9 +160,13 @@ function getCurrentPosition(): Promise<GeolocationPosition> {
 }
 
 export default function Home() {
+  const [view, setView] = useState<"today" | "history">("today");
   const [status, setStatus] = useState("กำลังเชื่อมต่อ LINE...");
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [attendance, setAttendance] = useState<Attendance | null>(null);
+  const [historyMonth, setHistoryMonth] = useState(() => currentBangkokMonth());
+  const [historyStats, setHistoryStats] = useState<MyStats | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [geofence, setGeofence] = useState<Geofence | null>(null);
   const [locating, setLocating] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -177,6 +250,32 @@ export default function Home() {
     const interval = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(interval);
   }, [attendance]);
+
+  useEffect(() => {
+    if (!employee || view !== "history") return;
+
+    const controller = new AbortController();
+
+    fetch(`/api/attendance/my-stats?month=${encodeURIComponent(historyMonth)}`, {
+      signal: controller.signal,
+    })
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "โหลดประวัติไม่สำเร็จ");
+        return data as MyStats;
+      })
+      .then((data) => {
+        setHistoryStats(data);
+        setHistoryError(null);
+        if (data.month !== historyMonth) setHistoryMonth(data.month);
+      })
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setHistoryError(err instanceof Error ? err.message : "โหลดประวัติไม่สำเร็จ");
+      });
+
+    return () => controller.abort();
+  }, [employee, historyMonth, view]);
 
   async function handleClockIn() {
     setActionError(null);
@@ -309,6 +408,18 @@ export default function Home() {
       ? new Date(attendance.clock_out_at).getTime() + CLOCK_OUT_UNDO_WINDOW_MS - now.getTime()
       : 0;
   const showUndoClockOut = undoMsRemaining > 0;
+  const historyLoading = view === "history" && !historyError && historyStats?.month !== historyMonth;
+  const canGoPrev = historyStats ? historyStats.month > historyStats.joinMonth : true;
+  const canGoNext = historyStats ? historyStats.month < historyStats.currentMonth : false;
+
+  function moveHistoryMonth(delta: number) {
+    setHistoryMonth((month) => {
+      const nextMonth = addMonth(month, delta);
+      if (historyStats && nextMonth < historyStats.joinMonth) return historyStats.joinMonth;
+      if (historyStats && nextMonth > historyStats.currentMonth) return historyStats.currentMonth;
+      return nextMonth;
+    });
+  }
 
   return (
     <main className="flex min-h-screen justify-center bg-muted/30 p-4 sm:p-6">
@@ -330,6 +441,122 @@ export default function Home() {
           </div>
         </CardHeader>
 
+        {view === "history" ? (
+          <>
+            <CardContent className="grid gap-4">
+              <div className="rounded-lg border bg-background p-4">
+                <div className="mb-4 flex items-center justify-between gap-2">
+                  <Button
+                    aria-label="เดือนก่อนหน้า"
+                    disabled={!canGoPrev || historyLoading}
+                    onClick={() => moveHistoryMonth(-1)}
+                    size="icon-sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    <ChevronLeft className="size-4" />
+                  </Button>
+                  <div className="text-center">
+                    <p className="text-xs text-muted-foreground">ประวัติของฉัน</p>
+                    <p className="text-sm font-semibold">{formatMonth(historyMonth)}</p>
+                  </div>
+                  <Button
+                    aria-label="เดือนถัดไป"
+                    disabled={!canGoNext || historyLoading}
+                    onClick={() => moveHistoryMonth(1)}
+                    size="icon-sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    <ChevronRight className="size-4" />
+                  </Button>
+                </div>
+
+                {historyLoading && (
+                  <div className="flex items-center gap-2 rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
+                    <RefreshCw className="size-4 animate-spin" />
+                    กำลังโหลดประวัติ...
+                  </div>
+                )}
+
+                {historyError && (
+                  <p className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+                    {historyError}
+                  </p>
+                )}
+
+                {historyStats && !historyLoading && !historyError && (
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="rounded-lg bg-emerald-50 p-3">
+                        <p className="text-xs text-emerald-700">มาทำงาน</p>
+                        <p className="mt-1 text-xl font-semibold text-emerald-950">
+                          {historyStats.summary.daysPresent} วัน
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-blue-50 p-3">
+                        <p className="text-xs text-blue-700">ชั่วโมงรวม</p>
+                        <p className="mt-1 text-xl font-semibold text-blue-950">
+                          {formatMinutes(historyStats.summary.totalMinutes)}
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-amber-50 p-3">
+                        <p className="text-xs text-amber-700">ลืม Clock out</p>
+                        <p className="mt-1 text-xl font-semibold text-amber-950">
+                          {historyStats.summary.missingClockOutDays} วัน
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-slate-100 p-3">
+                        <p className="text-xs text-slate-600">ตรงเวลา</p>
+                        <p className="mt-1 text-xl font-semibold text-slate-950">
+                          {historyStats.summary.onTimeDays} วัน
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="max-h-72 overflow-y-auto rounded-lg border">
+                      {historyStats.summary.rows.length === 0 ? (
+                        <p className="p-4 text-center text-sm text-muted-foreground">
+                          ไม่มีข้อมูลเดือนนี้
+                        </p>
+                      ) : (
+                        <div className="divide-y">
+                          {historyStats.summary.rows.map((row) => (
+                            <div
+                              className="grid grid-cols-[52px_1fr_auto] items-center gap-3 p-3 text-sm"
+                              key={row.work_date}
+                            >
+                              <span className="text-xs text-muted-foreground">
+                                {formatShortDate(row.work_date)}
+                              </span>
+                              <span className="font-mono text-xs">
+                                {formatMaybeTime(row.clock_in_at)} - {formatMaybeTime(row.clock_out_at)}
+                              </span>
+                              <span className="font-mono text-xs font-medium">
+                                {formatMinutes(row.total_minutes)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            </CardContent>
+            <CardFooter>
+              <Button
+                className="h-11 w-full"
+                onClick={() => setView("today")}
+                type="button"
+                variant="secondary"
+              >
+                กลับไปหน้าวันนี้
+              </Button>
+            </CardFooter>
+          </>
+        ) : (
+          <>
         <CardContent className="grid gap-4">
           <div className="rounded-lg border bg-background p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
@@ -405,6 +632,19 @@ export default function Home() {
               </div>
             </div>
           )}
+
+          <Button
+            className="w-full justify-between"
+            onClick={() => setView("history")}
+            type="button"
+            variant="outline"
+          >
+            <span className="inline-flex items-center gap-2">
+              <History className="size-4" />
+              ประวัติของฉัน
+            </span>
+            <ChevronRight className="size-4" />
+          </Button>
         </CardContent>
 
         <CardFooter>
@@ -437,6 +677,8 @@ export default function Home() {
             </Button>
           )}
         </CardFooter>
+          </>
+        )}
       </Card>
 
       <AlertDialog open={confirmingEarlyClockOut} onOpenChange={setConfirmingEarlyClockOut}>
