@@ -17,6 +17,25 @@ export async function pushLineMessage(to: string, text: string): Promise<void> {
   }
 }
 
+export async function replyLineMessage(replyToken: string, text: string): Promise<void> {
+  const res = await fetch("https://api.line.me/v2/bot/message/reply", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.LINE_MESSAGING_CHANNEL_ACCESS_TOKEN}`,
+    },
+    body: JSON.stringify({
+      replyToken,
+      messages: [{ type: "text", text }],
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`LINE reply failed (${res.status}): ${body}`);
+  }
+}
+
 export function liffUrl(): string {
   return `https://liff.line.me/${process.env.NEXT_PUBLIC_LIFF_ID}`;
 }
