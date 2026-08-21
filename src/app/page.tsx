@@ -2,8 +2,20 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Clock3, LocateFixed, MapPin, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
+import { BrandMark } from "@/components/brand-mark";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Card,
   CardContent,
@@ -12,6 +24,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  CLOCK_OUT_UNDO_WINDOW_MS,
+  formatBangkokTime,
+  isEarlyClockOut,
+  WORK_END_HOUR,
+  WORK_END_MINUTE,
+} from "@/lib/workSchedule";
 
 type Employee = {
   id: string;
@@ -79,6 +98,8 @@ export default function Home() {
   const [locating, setLocating] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [undoBusy, setUndoBusy] = useState(false);
+  const [confirmingEarlyClockOut, setConfirmingEarlyClockOut] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const positionRef = useRef<{ lat: number; lng: number; accuracy: number } | null>(null);
 
@@ -152,7 +173,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!attendance?.clock_in_at || attendance.clock_out_at) return;
+    if (!attendance?.clock_in_at) return;
     const interval = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(interval);
   }, [attendance]);
@@ -193,6 +214,21 @@ export default function Home() {
       setActionError("ยังไม่พบตำแหน่งปัจจุบัน กรุณาลองใหม่");
       return;
     }
+
+    if (isEarlyClockOut(new Date())) {
+      setConfirmingEarlyClockOut(true);
+      return;
+    }
+
+    await submitClockOut();
+  }
+
+  async function submitClockOut() {
+    if (!positionRef.current) {
+      setActionError("ยังไม่พบตำแหน่งปัจจุบัน กรุณาลองใหม่");
+      return;
+    }
+
     setBusy(true);
     try {
       const res = await fetch("/api/attendance/clock-out", {
@@ -207,6 +243,7 @@ export default function Home() {
         return;
       }
       setAttendance(data.attendance);
+      toast.success("Clock out แล้ว");
     } catch (err) {
       console.error(err);
       setActionError(
@@ -217,11 +254,36 @@ export default function Home() {
     }
   }
 
+  async function handleUndoClockOut() {
+    setActionError(null);
+    setUndoBusy(true);
+    try {
+      const res = await fetch("/api/attendance/undo-clock-out", {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setActionError(data.error ?? "ยกเลิก Clock out ไม่สำเร็จ");
+        return;
+      }
+      setAttendance(data.attendance);
+      toast.success("ยกเลิก Clock out แล้ว");
+    } catch (err) {
+      console.error(err);
+      setActionError(
+        `เกิดข้อผิดพลาด: ${err instanceof Error ? `${err.name}: ${err.message}` : String(err)}`
+      );
+    } finally {
+      setUndoBusy(false);
+    }
+  }
+
   if (!employee) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
         <Card className="w-full max-w-sm shadow-sm">
           <CardHeader>
+            <BrandMark />
             <CardTitle className="text-xl">ระบบลงเวลาทำงาน</CardTitle>
             <CardDescription>{formatThaiDate(now)}</CardDescription>
           </CardHeader>
@@ -242,11 +304,17 @@ export default function Home() {
     ? (clockedOut ? new Date(attendance!.clock_out_at!) : now).getTime() -
       new Date(attendance!.clock_in_at!).getTime()
     : 0;
+  const undoMsRemaining =
+    clockedOut && attendance?.clock_out_at
+      ? new Date(attendance.clock_out_at).getTime() + CLOCK_OUT_UNDO_WINDOW_MS - now.getTime()
+      : 0;
+  const showUndoClockOut = undoMsRemaining > 0;
 
   return (
     <main className="flex min-h-screen justify-center bg-muted/30 p-4 sm:p-6">
       <Card className="mt-4 w-full max-w-sm self-start shadow-sm">
         <CardHeader>
+          <BrandMark />
           <div className="flex items-start justify-between gap-3">
             <div>
               <CardTitle className="text-xl">
@@ -317,6 +385,26 @@ export default function Home() {
               {actionError}
             </p>
           )}
+
+          {showUndoClockOut && attendance?.clock_out_at && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              <p className="font-medium">
+                Clock out แล้วเมื่อ {formatTime(attendance.clock_out_at)} น.
+              </p>
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                <span>กดผิดใช่ไหม? เหลือ {Math.ceil(undoMsRemaining / 1000)} วินาที</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleUndoClockOut}
+                  disabled={undoBusy}
+                >
+                  ยกเลิก Clock out
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
 
         <CardFooter>
@@ -350,6 +438,32 @@ export default function Home() {
           )}
         </CardFooter>
       </Card>
+
+      <AlertDialog open={confirmingEarlyClockOut} onOpenChange={setConfirmingEarlyClockOut}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>ยืนยันการ Clock out</AlertDialogTitle>
+            <AlertDialogDescription>
+              ตอนนี้เวลา {formatBangkokTime(new Date())} น. ซึ่งเร็วกว่าเวลาเลิกงานปกติ (
+              {String(WORK_END_HOUR).padStart(2, "0")}:{String(WORK_END_MINUTE).padStart(2, "0")} น.)
+              ยืนยันว่าต้องการ Clock out ตอนนี้จริงหรือไม่?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={() => {
+                setConfirmingEarlyClockOut(false);
+                submitClockOut();
+              }}
+              disabled={busy}
+            >
+              Clock out
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   );
 }

@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { ArrowUpDown, Search } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -51,12 +53,21 @@ export type Employee = {
   created_at: string;
 };
 
+export type TodayAttendance = {
+  employee_id: string;
+  clock_in_at: string | null;
+  clock_out_at: string | null;
+};
+
 type EditForm = {
   display_name: string;
   employee_code: string;
   role: string;
   active: boolean;
 };
+
+type SortKey = "name" | "employee_code" | "role" | "active";
+type SortDir = "asc" | "desc";
 
 function emptyForm(employee: Employee): EditForm {
   return {
@@ -67,8 +78,82 @@ function emptyForm(employee: Employee): EditForm {
   };
 }
 
-export function EmployeesTable({ initialEmployees }: { initialEmployees: Employee[] }) {
+function displayName(employee: Employee) {
+  return employee.display_name ?? employee.name;
+}
+
+function formatTime(iso: string) {
+  return new Intl.DateTimeFormat("th-TH", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Bangkok",
+  }).format(new Date(iso));
+}
+
+function todayStatus(row: TodayAttendance | undefined) {
+  if (!row?.clock_in_at) {
+    return { label: "ยังไม่ลงเวลา", variant: "secondary" as const };
+  }
+  if (row.clock_out_at) {
+    return { label: `Clocked out ${formatTime(row.clock_out_at)}`, variant: "secondary" as const };
+  }
+  return { label: `Clocked in ${formatTime(row.clock_in_at)}`, variant: "outline" as const };
+}
+
+function compareEmployees(a: Employee, b: Employee, key: SortKey, dir: SortDir) {
+  let result = 0;
+
+  if (key === "active") {
+    result = a.active === b.active ? 0 : a.active ? -1 : 1;
+  } else {
+    const left =
+      key === "name" ? displayName(a) : key === "employee_code" ? a.employee_code ?? "" : a.role;
+    const right =
+      key === "name" ? displayName(b) : key === "employee_code" ? b.employee_code ?? "" : b.role;
+    result = left.localeCompare(right, "th", { numeric: true, sensitivity: "base" });
+  }
+
+  return dir === "asc" ? result : -result;
+}
+
+function SortButton({
+  label,
+  sortKey,
+  activeKey,
+  direction,
+  onSort,
+}: {
+  label: string;
+  sortKey: SortKey;
+  activeKey: SortKey;
+  direction: SortDir;
+  onSort: (key: SortKey) => void;
+}) {
+  const active = sortKey === activeKey;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(sortKey)}
+      className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-950"
+    >
+      {label}
+      <ArrowUpDown className={`size-3.5 ${active ? "text-slate-950" : "text-slate-400"}`} />
+      {active && <span className="sr-only">{direction === "asc" ? "ascending" : "descending"}</span>}
+    </button>
+  );
+}
+
+export function EmployeesTable({
+  initialEmployees,
+  todayStatusByEmployee,
+}: {
+  initialEmployees: Employee[];
+  todayStatusByEmployee: Record<string, TodayAttendance>;
+}) {
   const [employees, setEmployees] = useState(initialEmployees);
+  const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("name");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [editing, setEditing] = useState<Employee | null>(null);
   const [form, setForm] = useState<EditForm | null>(null);
   const [deleting, setDeleting] = useState<Employee | null>(null);
@@ -78,6 +163,15 @@ export function EmployeesTable({ initialEmployees }: { initialEmployees: Employe
   function openEdit(employee: Employee) {
     setEditing(employee);
     setForm(emptyForm(employee));
+  }
+
+  function handleSort(nextKey: SortKey) {
+    if (nextKey === sortKey) {
+      setSortDir((current) => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(nextKey);
+    setSortDir("asc");
   }
 
   async function handleSave() {
@@ -140,63 +234,133 @@ export function EmployeesTable({ initialEmployees }: { initialEmployees: Employe
     }
   }
 
+  const query = search.trim().toLowerCase();
+  const visibleEmployees = employees
+    .filter((employee) => {
+      if (!query) return true;
+      return [employee.name, employee.display_name, employee.employee_code]
+        .filter(Boolean)
+        .some((value) => value!.toLowerCase().includes(query));
+    })
+    .sort((a, b) => compareEmployees(a, b, sortKey, sortDir));
+
+  const activeCount = employees.filter((employee) => employee.active).length;
+  const adminCount = employees.filter((employee) => employee.role === "admin").length;
+
   return (
     <>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>ชื่อ (LINE)</TableHead>
-            <TableHead>ชื่อทางการ</TableHead>
-            <TableHead>รหัสพนักงาน</TableHead>
-            <TableHead>สิทธิ์</TableHead>
-            <TableHead>สถานะ</TableHead>
-            <TableHead className="text-right">จัดการ</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {employees.map((employee) => (
-            <TableRow key={employee.id}>
-              <TableCell>{employee.name}</TableCell>
-              <TableCell>{employee.display_name ?? "-"}</TableCell>
-              <TableCell>{employee.employee_code ?? "-"}</TableCell>
-              <TableCell>
-                <Badge variant={employee.role === "admin" ? "default" : "secondary"}>
-                  {employee.role}
-                </Badge>
-              </TableCell>
-              <TableCell>
-                <Badge variant={employee.active ? "default" : "destructive"}>
-                  {employee.active ? "ใช้งาน" : "ปิดใช้งาน"}
-                </Badge>
-              </TableCell>
-              <TableCell className="text-right">
-                <div className="flex justify-end gap-2">
-                  <Button size="sm" variant="outline" onClick={() => openEdit(employee)}>
-                    แก้ไข
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => {
-                      setDeleting(employee);
-                      setHasHistory(false);
-                    }}
-                  >
-                    ลบ
-                  </Button>
-                </div>
-              </TableCell>
-            </TableRow>
-          ))}
-          {employees.length === 0 && (
+      <section className="mb-7 grid gap-3 sm:grid-cols-3" aria-label="สรุปพนักงาน">
+        <Card className="border-slate-200 bg-white shadow-sm">
+          <CardContent className="p-5">
+            <p className="text-xs text-slate-500">พนักงานทั้งหมด</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-950">{employees.length}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-slate-200 bg-white shadow-sm">
+          <CardContent className="p-5">
+            <p className="text-xs text-slate-500">ใช้งาน</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-950">{activeCount}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-slate-200 bg-white shadow-sm">
+          <CardContent className="p-5">
+            <p className="text-xs text-slate-500">ผู้ดูแลระบบ</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-950">{adminCount}</p>
+          </CardContent>
+        </Card>
+      </section>
+
+      <Card className="border-slate-200 bg-white shadow-sm">
+        <CardHeader>
+          <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+            <div>
+              <CardTitle className="text-base">รายชื่อพนักงาน</CardTitle>
+              <p className="mt-1 text-sm text-muted-foreground">
+                แสดง {visibleEmployees.length} จาก {employees.length} คน
+              </p>
+            </div>
+            <div className="relative w-full md:max-w-xs">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="ค้นหาชื่อ/รหัสพนักงาน"
+                className="pl-9"
+              />
+            </div>
+          </div>
+        </CardHeader>
+        <Table>
+          <TableHeader>
             <TableRow>
-              <TableCell colSpan={6} className="text-center text-muted-foreground">
-                ยังไม่มีพนักงานในระบบ
-              </TableCell>
+              <TableHead className="px-5 sm:px-6">
+                <SortButton label="ชื่อ (LINE)" sortKey="name" activeKey={sortKey} direction={sortDir} onSort={handleSort} />
+              </TableHead>
+              <TableHead>ชื่อทางการ</TableHead>
+              <TableHead>
+                <SortButton label="รหัสพนักงาน" sortKey="employee_code" activeKey={sortKey} direction={sortDir} onSort={handleSort} />
+              </TableHead>
+              <TableHead>
+                <SortButton label="สิทธิ์" sortKey="role" activeKey={sortKey} direction={sortDir} onSort={handleSort} />
+              </TableHead>
+              <TableHead>
+                <SortButton label="สถานะ" sortKey="active" activeKey={sortKey} direction={sortDir} onSort={handleSort} />
+              </TableHead>
+              <TableHead>วันนี้</TableHead>
+              <TableHead className="px-5 text-right sm:px-6">จัดการ</TableHead>
             </TableRow>
-          )}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {visibleEmployees.map((employee) => {
+              const status = todayStatus(todayStatusByEmployee[employee.id]);
+              return (
+                <TableRow key={employee.id}>
+                  <TableCell className="px-5 sm:px-6">{employee.name}</TableCell>
+                  <TableCell>{employee.display_name ?? "-"}</TableCell>
+                  <TableCell>{employee.employee_code ?? "-"}</TableCell>
+                  <TableCell>
+                    <Badge variant={employee.role === "admin" ? "default" : "secondary"}>
+                      {employee.role}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={employee.active ? "default" : "destructive"}>
+                      {employee.active ? "ใช้งาน" : "ปิดใช้งาน"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={status.variant}>{status.label}</Badge>
+                  </TableCell>
+                  <TableCell className="px-5 text-right sm:px-6">
+                    <div className="flex justify-end gap-2">
+                      <Button size="sm" variant="outline" onClick={() => openEdit(employee)}>
+                        แก้ไข
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => {
+                          setDeleting(employee);
+                          setHasHistory(false);
+                        }}
+                      >
+                        ลบ
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+            {visibleEmployees.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
+                  ไม่พบพนักงานที่ตรงกับคำค้น
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </Card>
 
       <Dialog
         open={!!editing}
