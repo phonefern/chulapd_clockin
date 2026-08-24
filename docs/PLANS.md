@@ -12,6 +12,7 @@ Numbered plan documents for Codex to implement from. See each file's own structu
 | PLAN-006 | [PLAN_006_MONTHLY_EXPORT_AND_PRINT.md](./PLAN_006_MONTHLY_EXPORT_AND_PRINT.md) | Ready | New `/admin/export`: monthly daily-ledger table (one row per employee per work day), CSV download (UTF-8 BOM for Excel Thai text) + browser print-to-sign view with a signature line. Separate page from `/admin/stats` on purpose — a certification ledger and a trend dashboard are different documents |
 | PLAN-007 | [PLAN_007_EMPLOYEE_SELF_STATS.md](./PLAN_007_EMPLOYEE_SELF_STATS.md) | Ready | LIFF app gains an in-page "ประวัติของฉัน" toggle (no new route — avoids re-triggering `liff.init()`) showing the employee's own monthly days-present/hours/on-time stats. Introduces shared `getEmployeeMonthSummary()` helper that [[PLAN-008]] also calls |
 | PLAN-008 | [PLAN_008_LINE_OA_KEYWORD_REPLY.md](./PLAN_008_LINE_OA_KEYWORD_REPLY.md) | Ready (depends on 007's shared helper) | Extends the existing `follow`-only webhook with a `message`/text branch: fixed Thai keyword set ("วันนี้"/"เดือนนี้"/etc.) replies with today's status or month summary. No free-text NLU by design |
+| PLAN-009 | [PLAN_009_PRE_SHIFT_REMINDERS.md](./PLAN_009_PRE_SHIFT_REMINDERS.md) | Ready | Unconditional "10 minutes left" nudge to all active employees at 08:20 and 16:20 Bangkok (Mon–Fri), on top of the existing conditional late/forgot reminders. **Uses GitHub Actions `schedule` instead of Vercel Cron** — Hobby plan cron precision is only ±59min (confirmed via Vercel docs), which would make a "10 min before" reminder meaningless; user chose GitHub Actions over upgrading to Pro. Refactors `late-clock-in`/`forgot-clock-out` to share audience-query helpers with the new route |
 
 ## Suggested implementation order
 
@@ -23,6 +24,7 @@ Numbered plan documents for Codex to implement from. See each file's own structu
 6. **PLAN-006** (monthly export) — independent of 002/003/005, reuses `workDate.ts` helpers only
 7. **PLAN-007** (employee self stats) — independent, but land before 008
 8. **PLAN-008** (LINE keyword reply) — depends on 007's `getEmployeeMonthSummary()` helper
+9. **PLAN-009** (pre-shift reminders) — independent of 006/007/008, but touches the same two cron routes as the pre-existing late/forgot reminders (refactor, not a rewrite)
 
 ## Conventions
 
