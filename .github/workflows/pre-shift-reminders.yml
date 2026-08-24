@@ -21,6 +21,7 @@ on:
 jobs:
   send-reminder:
     runs-on: ubuntu-latest
+    environment: Production
     timeout-minutes: 5
     steps:
       - name: Resolve phase
@@ -40,12 +41,12 @@ jobs:
       - name: Trigger reminder endpoint
         shell: bash
         env:
-          APP_BASE_URL: ${{ vars.APP_BASE_URL }}
+          APP_BASE_URL: ${{ vars.APP_BASE_URL || secrets.APP_BASE_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           PHASE: ${{ steps.phase.outputs.phase }}
         run: |
           if [[ -z "$APP_BASE_URL" ]]; then
-            echo "APP_BASE_URL repository variable is required" >&2
+            echo "APP_BASE_URL repository variable or secret is required" >&2
             exit 1
           fi
 
