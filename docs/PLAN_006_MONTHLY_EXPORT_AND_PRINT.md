@@ -116,3 +116,30 @@ const { data: attendanceRows } = await supabase
 ## Rollback plan
 
 Confined to: `src/app/admin/export/`, `src/app/api/admin/export/`, the `lastDayOfMonth` addition to `workDate.ts`, the `@media print` CSS block, and the two nav-link additions. Revert/delete to fully undo — no schema change.
+
+---
+
+## Amendment (post-implementation): per-employee export filter
+
+**Status:** this plan shipped as an all-employees-per-month ledger (`src/app/admin/export/page.tsx`, `src/lib/attendanceExport.ts`'s `getMonthlyAttendanceLedger(supabase, month)`, `src/app/api/admin/export/attendance-csv/route.ts`). User follow-up request: *"ระบบ export ส่งออกให้สามารถเลือกได้ครับว่าจะ export ของ user คนไหนได้"* — add the ability to scope the export to a single employee instead of always all-employees.
+
+**Change:**
+- Add an `employee` search param (`?month=YYYY-MM&employee=<employeeId>|all`, default `all`) to both `/admin/export` and `/api/admin/export/attendance-csv`
+- `getMonthlyAttendanceLedger(supabase, month, employeeId?: string)` gains an optional third parameter — when provided, add `.eq("employee_id", employeeId)` to the query that already exists (filter server-side, not client-side, so the CSV payload itself is scoped too, not just the on-screen table)
+- UI: add a "พนักงาน" `<select>` next to the existing month `<input type="month">` in the same filter form on `/admin/export`, populated from `employees` (active, ordered by `employee_code`), with a "ทั้งหมด" option as the default — submits via the same GET form as the month picker (one submit updates both params)
+- CSV filename reflects the scope: `attendance_2026-08.csv` for all-employees (unchanged), `attendance_2026-08_EMP0004.csv` when a specific employee is selected (use their `employee_code`, falling back to the raw id if the code is null)
+- Zero-attendance rows still apply when a specific employee is selected — a person with zero attendance the whole month should still produce a full "ไม่มาทำงาน" ledger for themselves, not an empty page
+
+**Files touched (in addition to the original table above):**
+
+| File | Change |
+|---|---|
+| `src/lib/attendanceExport.ts` | `getMonthlyAttendanceLedger` gains optional `employeeId` param |
+| `src/app/admin/export/page.tsx` | Parse `employee` search param; add the employee `<select>`; pass through to the ledger call and the CSV download link's query string |
+| `src/app/api/admin/export/attendance-csv/route.ts` | Parse `employee` query param; pass through; adjust filename generation |
+
+**Verification additions:**
+- [ ] Selecting a specific employee shows only their rows on screen and in the downloaded CSV
+- [ ] "ทั้งหมด" (default) behaves exactly as before this amendment
+- [ ] Selected employee with zero attendance that month still produces a full all-"ไม่มาทำงาน" ledger, not an empty result
+- [ ] CSV filename includes the employee code when one is selected

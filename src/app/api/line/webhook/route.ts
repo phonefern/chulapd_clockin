@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getEmployeeMonthSummary, getEmployeeTodayStatus } from "@/lib/attendanceStats";
 import {
   formatHelpReply,
+  formatMonthDailyLedgerReply,
   formatMonthSummaryReply,
   formatNotRegisteredReply,
   formatTodayStatusReply,
@@ -34,7 +35,11 @@ function wantsTodayStatus(text: string) {
 }
 
 function wantsMonthSummary(text: string) {
-  return text.includes("เดือนนี้") || text.includes("ชั่วโมง") || text.includes("สรุป");
+  return text.includes("เดือนนี้") || text.includes("ชั่วโมง");
+}
+
+function wantsMonthDailyLedger(text: string) {
+  return text.includes("สรุป");
 }
 
 async function handleLineEvent(event: LineEvent) {
@@ -74,6 +79,13 @@ async function handleLineEvent(event: LineEvent) {
   if (wantsTodayStatus(text)) {
     const todayStatus = await getEmployeeTodayStatus(supabase, employeeRow.id);
     await replyLineMessage(event.replyToken, formatTodayStatusReply(displayName, todayStatus));
+    return;
+  }
+
+  if (wantsMonthDailyLedger(text)) {
+    const month = currentMonthInBangkok();
+    const summary = await getEmployeeMonthSummary(supabase, employeeRow.id, month);
+    await replyLineMessage(event.replyToken, formatMonthDailyLedgerReply(displayName, month, summary));
     return;
   }
 

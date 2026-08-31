@@ -1,4 +1,5 @@
 import type { EmployeeMonthSummary, EmployeeTodayStatus } from "@/lib/attendanceStats";
+import { enumerateWorkDates, lastDayOfMonth } from "@/lib/workDate";
 
 function formatTime(iso: string | null) {
   if (!iso) return "-";
@@ -21,6 +22,14 @@ function formatThaiMonth(month: string) {
     year: "numeric",
     timeZone: "Asia/Bangkok",
   }).format(new Date(`${month}-01T00:00:00+07:00`));
+}
+
+function formatShortDate(date: string) {
+  return new Intl.DateTimeFormat("th-TH-u-ca-buddhist", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Asia/Bangkok",
+  }).format(new Date(`${date}T00:00:00+07:00`));
 }
 
 export function formatTodayStatusReply(displayName: string, status: EmployeeTodayStatus) {
@@ -49,11 +58,28 @@ export function formatMonthSummaryReply(
   ].join("\n");
 }
 
+export function formatMonthDailyLedgerReply(
+  displayName: string,
+  month: string,
+  summary: EmployeeMonthSummary
+) {
+  const rowByDate = new Map(summary.rows.map((row) => [row.work_date, row]));
+  const lines = enumerateWorkDates(`${month}-01`, lastDayOfMonth(month)).map((date) => {
+    const row = rowByDate.get(date);
+    if (!row?.clock_in_at) return `${formatShortDate(date)} ไม่มาทำงาน`;
+    if (!row.clock_out_at) return `${formatShortDate(date)} ${formatTime(row.clock_in_at)} - ยังไม่ Clock out`;
+    return `${formatShortDate(date)} ${formatTime(row.clock_in_at)} - ${formatTime(row.clock_out_at)}`;
+  });
+
+  return [`เดือน${formatThaiMonth(month)}ของคุณ ${displayName}`, ...lines].join("\n");
+}
+
 export function formatHelpReply(liffUrl: string) {
   return [
     "พิมพ์คำสั่งเหล่านี้เพื่อเช็คข้อมูลครับ",
     "วันนี้ หรือ สถานะ = ดูสถานะลงเวลาวันนี้",
-    "เดือนนี้, ชั่วโมง หรือ สรุป = ดูสรุปเดือนนี้",
+    "เดือนนี้ หรือ ชั่วโมง = ดูตัวเลขสรุปรวมเดือนนี้",
+    "สรุป = ดูรายการเข้า-ออกงานรายวันทั้งเดือน",
     `ต้องการ Clock in / Clock out ให้เปิด Rich Menu หรือเข้า ${liffUrl}`,
   ].join("\n");
 }

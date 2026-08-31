@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { ArrowRight, BarChart3, Clock3, FileClock, FileDown, Users, UserCheck } from "lucide-react";
 import { AutoRefresh } from "@/components/admin/auto-refresh";
 import { DateNav } from "@/components/admin/date-nav";
+import { EditAttendanceButton } from "@/components/admin/edit-attendance-button";
 import { BrandMark } from "@/components/brand-mark";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
@@ -84,8 +85,9 @@ export default async function AdminPage({
     .order("clock_in_at", { ascending: true });
 
   const rows = (data ?? []) as unknown as AttendanceRow[];
-  const completedCount = rows.filter((row) => row.clock_out_at).length;
-  const activeCount = rows.length - completedCount;
+  const presentCount = rows.filter((row) => row.clock_in_at).length;
+  const completedCount = rows.filter((row) => row.clock_in_at && row.clock_out_at).length;
+  const activeCount = rows.filter((row) => row.clock_in_at && !row.clock_out_at).length;
   const totalMinutes = rows.reduce((total, row) => total + (row.total_minutes ?? 0), 0);
   const updatedAt = new Date().toISOString();
 
@@ -145,7 +147,7 @@ export default async function AdminPage({
               </span>
               <div>
                 <p className="text-xs text-slate-500">พนักงานลงเวลา</p>
-                <p className="mt-1 text-2xl font-semibold text-slate-950">{rows.length}</p>
+                <p className="mt-1 text-2xl font-semibold text-slate-950">{presentCount}</p>
               </div>
             </CardContent>
           </Card>
@@ -204,11 +206,14 @@ export default async function AdminPage({
                 <TableHead className="text-xs text-slate-500">เวลาออก</TableHead>
                 <TableHead className="text-xs text-slate-500">ชั่วโมง</TableHead>
                 <TableHead className="px-5 text-xs text-slate-500 sm:px-6">สถานะ</TableHead>
+                <TableHead className="w-10 text-xs text-slate-500" aria-label="แก้ไขเวลา" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((row) => {
                 const displayName = row.employees?.display_name ?? row.employees?.name ?? "-";
+                const isPresent = !!row.clock_in_at;
+                const isCompleted = !!row.clock_in_at && !!row.clock_out_at;
                 return (
                   <TableRow key={row.id}>
                     <TableCell className="px-5 sm:px-6">
@@ -231,19 +236,39 @@ export default async function AdminPage({
                     </TableCell>
                     <TableCell className="px-5 sm:px-6">
                       <Badge
-                        variant={row.clock_out_at ? "secondary" : "outline"}
-                        className={row.clock_out_at ? "bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"}
+                        variant={isCompleted ? "secondary" : "outline"}
+                        className={
+                          isCompleted
+                            ? "bg-emerald-50 text-emerald-700"
+                            : isPresent
+                              ? "border-amber-200 bg-amber-50 text-amber-700"
+                              : "border-slate-200 bg-slate-50 text-slate-500"
+                        }
                       >
-                        <span className={cn("size-1.5 rounded-full", row.clock_out_at ? "bg-emerald-500" : "bg-amber-500")} />
-                        {row.clock_out_at ? "ปกติ" : "กำลังทำงาน"}
+                        <span
+                          className={cn(
+                            "size-1.5 rounded-full",
+                            isCompleted ? "bg-emerald-500" : isPresent ? "bg-amber-500" : "bg-slate-400"
+                          )}
+                        />
+                        {isCompleted ? "ปกติ" : isPresent ? "กำลังทำงาน" : "ล้างเวลาแล้ว"}
                       </Badge>
+                    </TableCell>
+                    <TableCell className="pr-4">
+                      <EditAttendanceButton
+                        attendanceId={row.id}
+                        clockInAt={row.clock_in_at}
+                        clockOutAt={row.clock_out_at}
+                        employeeName={displayName}
+                        workDateLabel={formatDate(workDate)}
+                      />
                     </TableCell>
                   </TableRow>
                 );
               })}
               {rows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="h-32 text-center text-sm text-slate-500">
+                  <TableCell colSpan={6} className="h-32 text-center text-sm text-slate-500">
                     ยังไม่มีใครลงเวลาในวันที่เลือก
                   </TableCell>
                 </TableRow>

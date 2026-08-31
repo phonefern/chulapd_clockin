@@ -25,6 +25,10 @@ function csvCell(value: string | number | null | undefined): string {
   return `"${text.replaceAll('"', '""')}"`;
 }
 
+function sanitizeFilenamePart(value: string) {
+  return value.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
 export async function GET(req: NextRequest) {
   const session = await getAdminSessionFromRequest(req);
   if (!session) {
@@ -32,10 +36,12 @@ export async function GET(req: NextRequest) {
   }
 
   const month = resolveWorkMonth(req.nextUrl.searchParams.get("month") ?? undefined);
+  const employeeParam = req.nextUrl.searchParams.get("employee");
+  const employeeId = employeeParam && employeeParam !== "all" ? employeeParam : undefined;
   const supabase = getSupabaseAdmin();
 
   try {
-    const ledger = await getMonthlyAttendanceLedger(supabase, month);
+    const ledger = await getMonthlyAttendanceLedger(supabase, month, employeeId);
     const rows = [
       ["ชื่อพนักงาน", "รหัสพนักงาน", "วันที่", "เวลาเข้า", "เวลาออก", "ชั่วโมง", "สถานะ"],
       ...ledger.map((row) => [
@@ -49,11 +55,14 @@ export async function GET(req: NextRequest) {
       ]),
     ];
     const csv = `\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\r\n")}\r\n`;
+    const employeeSuffix = employeeId
+      ? `_${sanitizeFilenamePart(ledger[0]?.employeeCode ?? employeeId)}`
+      : "";
 
     return new Response(csv, {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="attendance_${month}.csv"`,
+        "Content-Disposition": `attachment; filename="attendance_${month}${employeeSuffix}.csv"`,
         "Cache-Control": "no-store",
       },
     });

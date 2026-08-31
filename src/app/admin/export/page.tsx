@@ -26,6 +26,17 @@ export const metadata: Metadata = {
   title: "ส่งออกรายงาน · ChulaPD Attendance",
 };
 
+type EmployeeOption = {
+  id: string;
+  employee_code: string | null;
+  name: string;
+  display_name: string | null;
+};
+
+function scalar(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
 function formatTime(iso: string | null) {
   if (!iso) return "-";
   return new Intl.DateTimeFormat("th-TH", {
@@ -72,18 +83,34 @@ export default async function AdminExportPage({
   const params = await searchParams;
   const month = resolveWorkMonth(params.month);
   const supabase = getSupabaseAdmin();
-  let ledger: MonthlyLedgerRow[] = [];
-  let errorMessage: string | null = null;
+  const { data: employeesData, error: employeesError } = await supabase
+    .from("employees")
+    .select("id, employee_code, name, display_name")
+    .eq("active", true)
+    .order("employee_code", { ascending: true });
 
-  try {
-    ledger = await getMonthlyAttendanceLedger(supabase, month);
-  } catch (err) {
-    errorMessage = err instanceof Error ? err.message : "โหลดข้อมูลไม่สำเร็จ";
+  const employees = (employeesData ?? []) as EmployeeOption[];
+  const employeeParam = scalar(params.employee);
+  const selectedEmployeeId =
+    employeeParam && employeeParam !== "all" && employees.some((employee) => employee.id === employeeParam)
+      ? employeeParam
+      : undefined;
+  const selectedEmployee = employees.find((employee) => employee.id === selectedEmployeeId) ?? null;
+  let ledger: MonthlyLedgerRow[] = [];
+  let errorMessage: string | null = employeesError?.message ?? null;
+
+  if (!employeesError) {
+    try {
+      ledger = await getMonthlyAttendanceLedger(supabase, month, selectedEmployeeId);
+    } catch (err) {
+      errorMessage = err instanceof Error ? err.message : "โหลดข้อมูลไม่สำเร็จ";
+    }
   }
 
   const employeeCount = new Set(ledger.map((row) => row.employeeId)).size;
   const daysPresent = ledger.filter((row) => row.clockInAt).length;
-  const downloadHref = `/api/admin/export/attendance-csv?month=${encodeURIComponent(month)}`;
+  const downloadParams = new URLSearchParams({ month, employee: selectedEmployeeId ?? "all" });
+  const downloadHref = `/api/admin/export/attendance-csv?${downloadParams.toString()}`;
 
   return (
     <main className="min-h-screen bg-muted/30 px-4 py-8 text-slate-950 sm:px-6 lg:px-8">
@@ -111,20 +138,46 @@ export default async function AdminExportPage({
           </div>
         </header>
 
-        <section className="no-print mb-7 grid gap-3 md:grid-cols-[minmax(220px,280px)_1fr_1fr]">
-          <form className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <label className="text-xs font-medium text-slate-500" htmlFor="month">
-              เดือน
-            </label>
-            <Input className="mt-2" id="month" name="month" type="month" defaultValue={month} />
-            <button className={cn(buttonVariants({ size: "sm" }), "mt-3 w-full")} type="submit">
-              เปลี่ยนเดือน
+        <section className="no-print mb-7 grid gap-3 md:grid-cols-[minmax(360px,480px)_1fr_1fr]">
+          <form className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-2">
+            <div>
+              <label className="text-xs font-medium text-slate-500" htmlFor="month">
+                เดือน
+              </label>
+              <Input className="mt-2" id="month" name="month" type="month" defaultValue={month} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-500" htmlFor="employee">
+                พนักงาน
+              </label>
+              <select
+                className="mt-2 h-8 w-full rounded-lg border border-input bg-background px-2.5 py-1 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                defaultValue={selectedEmployeeId ?? "all"}
+                id="employee"
+                name="employee"
+              >
+                <option value="all">ทั้งหมด</option>
+                {employees.map((employee) => (
+                  <option key={employee.id} value={employee.id}>
+                    {employee.employee_code ? `${employee.employee_code} · ` : ""}
+                    {employee.display_name ?? employee.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button className={cn(buttonVariants({ size: "sm" }), "sm:col-span-2")} type="submit">
+              เปลี่ยนตัวกรอง
             </button>
           </form>
           <Card className="border-slate-200 bg-white shadow-sm">
             <CardContent className="p-5">
-              <p className="text-xs text-slate-500">พนักงานในรายงาน</p>
-              <p className="mt-1 text-2xl font-semibold text-slate-950">{employeeCount}</p>
+              <p className="text-xs text-slate-500">ขอบเขตรายงาน</p>
+              <p className="mt-1 truncate text-lg font-semibold text-slate-950">
+                {selectedEmployee ? selectedEmployee.display_name ?? selectedEmployee.name : "ทั้งหมด"}
+              </p>
+              <p className="mt-1 text-xs text-slate-400">
+                {selectedEmployee ? selectedEmployee.employee_code ?? "ไม่มีรหัสพนักงาน" : `${employeeCount} คน`}
+              </p>
             </CardContent>
           </Card>
           <Card className="border-slate-200 bg-white shadow-sm">
@@ -141,7 +194,9 @@ export default async function AdminExportPage({
               <h2 className="text-base font-semibold text-slate-950">
                 รายงานการลงเวลาประจำเดือน {formatThaiMonth(month)}
               </h2>
-              <p className="mt-1 text-xs text-slate-500">ชื่อ วันที่ เวลาเข้า เวลาออก ชั่วโมง และสถานะ</p>
+              <p className="mt-1 text-xs text-slate-500">
+                {selectedEmployee ? `เฉพาะ ${selectedEmployee.display_name ?? selectedEmployee.name}` : "พนักงานทั้งหมด"} · มาแล้ว {daysPresent} รายการ
+              </p>
             </div>
             <Badge className="w-fit" variant="secondary">
               {ledger.length} รายการ

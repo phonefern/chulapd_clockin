@@ -17,8 +17,9 @@ The webhook at [api/line/webhook/route.ts](../src/app/api/line/webhook/route.ts)
 | User types (contains) | Reply |
 |---|---|
 | `วันนี้` or `สถานะ` | Today's status: not-yet-clocked-in / clocked-in-since-HH:mm / clocked-out-HH:mm–HH:mm |
-| `เดือนนี้` or `ชั่วโมง` or `สรุป` | This month's summary: days present, total hours, missing-clock-out count (from `getEmployeeMonthSummary`) |
-| anything else, or sender not found in `employees` | Help text: list of the two keywords above, plus a reminder to use the Rich Menu / LIFF link for actually clocking in/out |
+| `เดือนนี้` or `ชั่วโมง` | This month's *aggregate* summary: days present, total hours, missing-clock-out count (from `getEmployeeMonthSummary`) |
+| `สรุป` | This month's **full daily ledger** — every day of the month, one line each, with clock-in/clock-out times (or "ไม่มาทำงาน" for a day with no record) — not just the aggregate. Revised per user request: *"พิมพ์คำว่าสรุป ให้ไล่การทำงานของเดือนนั้นมาให้หมดเลยครับว่าเข้าเวลาไหนออกเวลาไหนของวันที่แต่ละวัน"* |
+| anything else, or sender not found in `employees` | Help text: list of the three keywords above, plus a reminder to use the Rich Menu / LIFF link for actually clocking in/out |
 
 **Out of scope:**
 - Free-text/NLU understanding — fixed keyword matching only, by design (predictable, no AI cost, no hallucination risk on something people may treat as an official record)
@@ -61,6 +62,8 @@ if (event.type === "message" && event.message?.type === "text" && event.replyTok
 
 `getEmployeeTodayStatus(supabase, employeeId)` is a small new helper alongside `getEmployeeMonthSummary` in [attendanceStats.ts](../src/lib/attendanceStats.ts) (added by [[PLAN-007]]) — single-row lookup on `attendance` for `work_date = todayInBangkok()`.
 
+The `สรุป` (full ledger) reply reuses `getEmployeeMonthSummary`'s existing `rows` array (PLAN-007 already returns per-day rows for its LIFF list view, not just the aggregate — no new query needed here) and formats **every date in the month** (via `enumerateWorkDates`, same helper PLAN-003/006 use), filling in a row's actual times where one exists and `"ไม่มาทำงาน"` where it doesn't, rather than only iterating the days that happen to have an attendance record.
+
 ## UI structure
 
 Not applicable — this is a chat-only feature. Example exchange:
@@ -71,6 +74,15 @@ Bot:      เดือนสิงหาคม 2569 ของคุณ Fone
           มาทำงาน 18 วัน
           รวม 142:30 ชม.
           ลืม Clock out 1 วัน
+
+Employee: สรุป
+Bot:      เดือนสิงหาคม 2569 ของคุณ Fone
+          01/08  08:27 - 16:35
+          02/08  08:31 - 16:30
+          03/08  ไม่มาทำงาน
+          04/08  08:29 - ยังไม่ Clock out
+          ...
+          31/08  ไม่มาทำงาน
 ```
 
 ## Files to create / modify
@@ -88,12 +100,14 @@ Bot:      เดือนสิงหาคม 2569 ของคุณ Fone
 3. Sender not found in `employees` (friended the OA but never opened the LIFF app) → the not-registered nudge, never a raw error or silence.
 4. Keyword matching must not false-positive on the LIFF welcome/reminder messages *we* send (not an issue since we only match on **incoming** `message` events, but worth a comment in code so a future edit doesn't wire this branch to our own outgoing pushes by mistake).
 5. This webhook is a single `POST` route already shared with the `follow` handling — keep both branches in the same file (don't split into separate webhook endpoints; LINE only supports one webhook URL per channel).
+6. LINE text messages have a length cap (5,000 UTF-16 units) — a full-month `สรุป` reply for ~31 days at one line each is comfortably under that, but if a future change makes lines longer (e.g. adding geofence distance per day), truncate to the first ~28 days with a trailing "..." note rather than letting the LINE API call fail outright.
 
 ## Verification checklist
 
 - [ ] Typing "วันนี้" before clocking in today replies with the not-yet-clocked-in message
 - [ ] Typing "วันนี้" after clocking in replies with the correct clock-in time
 - [ ] Typing "เดือนนี้" replies with numbers matching the employee's own `/admin`-visible record for the month
+- [ ] Typing "สรุป" replies with one line per calendar day of the month (including "ไม่มาทำงาน" days), matching `/admin`'s and PLAN-006's export ledger for the same employee/month
 - [ ] Typing an unrecognized message replies with the help text, not silence or an error
 - [ ] Messaging from a LINE account that's never opened the LIFF app gets the not-registered nudge with the LIFF link
 - [ ] A batch webhook payload with multiple events (e.g. `follow` + `message` together) processes both without one blocking the other
