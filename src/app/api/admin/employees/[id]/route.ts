@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAdminSessionFromRequest } from "@/lib/requireAdminSession";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 
-const EDITABLE_FIELDS = ["display_name", "employee_code", "role", "active"] as const;
+const EDITABLE_FIELDS = ["display_name", "employee_code", "role", "active", "reminders_enabled"] as const;
 
 export async function PATCH(
   req: NextRequest,
@@ -42,7 +42,7 @@ export async function PATCH(
     .from("employees")
     .update(update)
     .eq("id", id)
-    .select("id, employee_code, name, display_name, line_user_id, role, active, created_at")
+    .select("id, employee_code, name, display_name, line_user_id, role, active, reminders_enabled, created_at")
     .single();
 
   if (error || !employee) {

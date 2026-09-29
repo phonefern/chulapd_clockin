@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowUpDown, Search } from "lucide-react";
+import { ArrowUpDown, BellOff, CalendarOff, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -50,6 +50,19 @@ export type Employee = {
   line_user_id: string | null;
   role: string;
   active: boolean;
+  reminders_enabled: boolean;
+  created_at: string;
+};
+
+export type LeavePeriod = "full" | "morning" | "afternoon";
+
+export type EmployeeLeave = {
+  id: string;
+  employee_id: string;
+  start_date: string;
+  end_date: string;
+  period: LeavePeriod;
+  note: string | null;
   created_at: string;
 };
 
@@ -64,6 +77,14 @@ type EditForm = {
   employee_code: string;
   role: string;
   active: boolean;
+  reminders_enabled: boolean;
+};
+
+type LeaveForm = {
+  start_date: string;
+  end_date: string;
+  period: LeavePeriod;
+  note: string;
 };
 
 type SortKey = "name" | "employee_code" | "role" | "active";
@@ -75,7 +96,34 @@ function emptyForm(employee: Employee): EditForm {
     employee_code: employee.employee_code ?? "",
     role: employee.role,
     active: employee.active,
+    reminders_enabled: employee.reminders_enabled,
   };
+}
+
+const LEAVE_PERIOD_LABEL: Record<LeavePeriod, string> = {
+  full: "ทั้งวัน",
+  morning: "ครึ่งเช้า",
+  afternoon: "ครึ่งบ่าย",
+};
+
+function emptyLeaveForm(today: string): LeaveForm {
+  return { start_date: today, end_date: today, period: "full", note: "" };
+}
+
+function formatLeaveDate(date: string) {
+  return new Intl.DateTimeFormat("th-TH", {
+    day: "numeric",
+    month: "short",
+    timeZone: "Asia/Bangkok",
+  }).format(new Date(`${date}T00:00:00+07:00`));
+}
+
+function formatLeaveRange(leave: EmployeeLeave) {
+  const range =
+    leave.start_date === leave.end_date
+      ? formatLeaveDate(leave.start_date)
+      : `${formatLeaveDate(leave.start_date)} – ${formatLeaveDate(leave.end_date)}`;
+  return `${range} (${LEAVE_PERIOD_LABEL[leave.period]})`;
 }
 
 function displayName(employee: Employee) {
@@ -146,9 +194,13 @@ function SortButton({
 export function EmployeesTable({
   initialEmployees,
   todayStatusByEmployee,
+  initialLeavesByEmployee,
+  today,
 }: {
   initialEmployees: Employee[];
   todayStatusByEmployee: Record<string, TodayAttendance>;
+  initialLeavesByEmployee: Record<string, EmployeeLeave[]>;
+  today: string;
 }) {
   const [employees, setEmployees] = useState(initialEmployees);
   const [search, setSearch] = useState("");
@@ -159,6 +211,9 @@ export function EmployeesTable({
   const [deleting, setDeleting] = useState<Employee | null>(null);
   const [hasHistory, setHasHistory] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [leavesByEmployee, setLeavesByEmployee] = useState(initialLeavesByEmployee);
+  const [leaveEmployee, setLeaveEmployee] = useState<Employee | null>(null);
+  const [leaveForm, setLeaveForm] = useState<LeaveForm>(() => emptyLeaveForm(today));
 
   function openEdit(employee: Employee) {
     setEditing(employee);
@@ -186,6 +241,7 @@ export function EmployeesTable({
           employee_code: form.employee_code,
           role: form.role,
           active: form.active,
+          reminders_enabled: form.reminders_enabled,
         }),
       });
       const data = await res.json();
@@ -227,6 +283,62 @@ export function EmployeesTable({
       toast.success(force ? "ลบพนักงานพร้อมประวัติแล้ว" : "ลบพนักงานแล้ว");
       setDeleting(null);
       setHasHistory(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function openLeaves(employee: Employee) {
+    setLeaveEmployee(employee);
+    setLeaveForm(emptyLeaveForm(today));
+  }
+
+  async function handleAddLeave() {
+    if (!leaveEmployee) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/leaves", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employee_id: leaveEmployee.id, ...leaveForm }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "บันทึกวันลาไม่สำเร็จ");
+        return;
+      }
+      const leave = data.leave as EmployeeLeave;
+      setLeavesByEmployee((prev) => ({
+        ...prev,
+        [leave.employee_id]: [...(prev[leave.employee_id] ?? []), leave].sort((a, b) =>
+          a.start_date.localeCompare(b.start_date)
+        ),
+      }));
+      setLeaveForm(emptyLeaveForm(today));
+      toast.success("บันทึกวันลาแล้ว");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteLeave(leave: EmployeeLeave) {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/admin/leaves/${leave.id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "ลบวันลาไม่สำเร็จ");
+        return;
+      }
+      setLeavesByEmployee((prev) => ({
+        ...prev,
+        [leave.employee_id]: (prev[leave.employee_id] ?? []).filter((l) => l.id !== leave.id),
+      }));
+      toast.success("ลบวันลาแล้ว");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
     } finally {
@@ -313,6 +425,9 @@ export function EmployeesTable({
           <TableBody>
             {visibleEmployees.map((employee) => {
               const status = todayStatus(todayStatusByEmployee[employee.id]);
+              const leaveToday = (leavesByEmployee[employee.id] ?? []).find(
+                (leave) => leave.start_date <= today && leave.end_date >= today
+              );
               return (
                 <TableRow key={employee.id}>
                   <TableCell className="px-5 sm:px-6">{employee.name}</TableCell>
@@ -324,17 +439,36 @@ export function EmployeesTable({
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <Badge variant={employee.active ? "default" : "destructive"}>
-                      {employee.active ? "ใช้งาน" : "ปิดใช้งาน"}
-                    </Badge>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Badge variant={employee.active ? "default" : "destructive"}>
+                        {employee.active ? "ใช้งาน" : "ปิดใช้งาน"}
+                      </Badge>
+                      {!employee.reminders_enabled && (
+                        <Badge variant="outline" className="gap-1 text-slate-500">
+                          <BellOff className="size-3" />
+                          ปิดแจ้งเตือน
+                        </Badge>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>
-                    <Badge variant={status.variant}>{status.label}</Badge>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Badge variant={status.variant}>{status.label}</Badge>
+                      {leaveToday && (
+                        <Badge variant="outline" className="gap-1 border-amber-300 bg-amber-50 text-amber-800">
+                          <CalendarOff className="size-3" />
+                          ลา{LEAVE_PERIOD_LABEL[leaveToday.period]}
+                        </Badge>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="px-5 text-right sm:px-6">
                     <div className="flex justify-end gap-2">
                       <Button size="sm" variant="outline" onClick={() => openEdit(employee)}>
                         แก้ไข
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => openLeaves(employee)}>
+                        วันลา
                       </Button>
                       <Button
                         size="sm"
@@ -417,6 +551,19 @@ export function EmployeesTable({
                   onCheckedChange={(checked) => setForm({ ...form, active: !!checked })}
                 />
               </div>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <Label htmlFor="reminders_enabled">รับแจ้งเตือนผ่าน LINE</Label>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    ปิดสำหรับคนที่ไม่ได้ใช้ระบบลงเวลา เพื่อประหยัดโควตาข้อความ LINE
+                  </p>
+                </div>
+                <Switch
+                  id="reminders_enabled"
+                  checked={form.reminders_enabled}
+                  onCheckedChange={(checked) => setForm({ ...form, reminders_enabled: !!checked })}
+                />
+              </div>
             </div>
           )}
           <DialogFooter>
@@ -425,6 +572,126 @@ export function EmployeesTable({
             </Button>
             <Button onClick={handleSave} disabled={saving}>
               {saving ? "กำลังบันทึก..." : "บันทึก"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!leaveEmployee}
+        onOpenChange={(open) => {
+          if (!open) setLeaveEmployee(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              วันลา · {leaveEmployee ? displayName(leaveEmployee) : ""}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            วันที่ลาจะไม่ถูกส่งแจ้งเตือนทาง LINE — ลาครึ่งเช้าข้ามเฉพาะรอบ 08:20
+            ลาครึ่งบ่ายข้ามเฉพาะรอบ 16:20
+          </p>
+          {leaveEmployee && (
+            <div className="grid gap-4">
+              <div className="grid gap-2">
+                <p className="text-sm font-medium">วันลาที่กำลังจะถึง</p>
+                {(leavesByEmployee[leaveEmployee.id] ?? []).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">ยังไม่มีวันลา</p>
+                ) : (
+                  <ul className="grid gap-1.5">
+                    {(leavesByEmployee[leaveEmployee.id] ?? []).map((leave) => (
+                      <li
+                        key={leave.id}
+                        className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm"
+                      >
+                        <div>
+                          <p>{formatLeaveRange(leave)}</p>
+                          {leave.note && (
+                            <p className="text-xs text-muted-foreground">{leave.note}</p>
+                          )}
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          aria-label="ลบวันลา"
+                          onClick={() => handleDeleteLeave(leave)}
+                          disabled={saving}
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="grid gap-3 border-t pt-4">
+                <p className="text-sm font-medium">เพิ่มวันลา</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="leave_start">ตั้งแต่</Label>
+                    <Input
+                      id="leave_start"
+                      type="date"
+                      value={leaveForm.start_date}
+                      onChange={(e) => {
+                        const start = e.target.value;
+                        setLeaveForm((prev) => ({
+                          ...prev,
+                          start_date: start,
+                          end_date: prev.end_date < start ? start : prev.end_date,
+                        }));
+                      }}
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="leave_end">ถึง</Label>
+                    <Input
+                      id="leave_end"
+                      type="date"
+                      min={leaveForm.start_date}
+                      value={leaveForm.end_date}
+                      onChange={(e) => setLeaveForm({ ...leaveForm, end_date: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-1.5">
+                  <Label>ช่วงเวลา</Label>
+                  <Select
+                    value={leaveForm.period}
+                    onValueChange={(value) =>
+                      setLeaveForm({ ...leaveForm, period: value as LeavePeriod })
+                    }
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="full">ทั้งวัน</SelectItem>
+                      <SelectItem value="morning">ครึ่งเช้า</SelectItem>
+                      <SelectItem value="afternoon">ครึ่งบ่าย</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="leave_note">หมายเหตุ (ไม่บังคับ)</Label>
+                  <Input
+                    id="leave_note"
+                    value={leaveForm.note}
+                    onChange={(e) => setLeaveForm({ ...leaveForm, note: e.target.value })}
+                    placeholder="เช่น ลาพักร้อน, ลาป่วย"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLeaveEmployee(null)}>
+              ปิด
+            </Button>
+            <Button onClick={handleAddLeave} disabled={saving || !leaveForm.start_date}>
+              {saving ? "กำลังบันทึก..." : "เพิ่มวันลา"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -3,7 +3,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ArrowLeft, BarChart3, FileDown } from "lucide-react";
 import { BrandMark } from "@/components/brand-mark";
-import { EmployeesTable, type Employee, type TodayAttendance } from "@/components/admin/employees-table";
+import {
+  EmployeesTable,
+  type Employee,
+  type EmployeeLeave,
+  type TodayAttendance,
+} from "@/components/admin/employees-table";
 import { buttonVariants } from "@/components/ui/button";
 import { getAdminSession } from "@/lib/requireAdminSession";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
@@ -21,23 +26,33 @@ export default async function AdminEmployeesPage() {
   }
 
   const supabase = getSupabaseAdmin();
-  const [{ data, error }, { data: todayRows }] = await Promise.all([
+  const today = todayInBangkok();
+  const [{ data, error }, { data: todayRows }, { data: leaveRows }] = await Promise.all([
     supabase
       .from("employees")
-      .select("id, employee_code, name, display_name, line_user_id, role, active, created_at")
+      .select("id, employee_code, name, display_name, line_user_id, role, active, reminders_enabled, created_at")
       .order("created_at", { ascending: true }),
     supabase
       .from("attendance")
       .select("employee_id, clock_in_at, clock_out_at")
-      .eq("work_date", todayInBangkok()),
+      .eq("work_date", today),
+    supabase
+      .from("employee_leaves")
+      .select("id, employee_id, start_date, end_date, period, note, created_at")
+      .gte("end_date", today)
+      .order("start_date", { ascending: true }),
   ]);
 
   const employees = (data ?? []) as Employee[];
   const todayStatusByEmployee = Object.fromEntries(
     ((todayRows ?? []) as TodayAttendance[]).map((row) => [row.employee_id, row])
   );
+  const leavesByEmployee: Record<string, EmployeeLeave[]> = {};
+  for (const leave of (leaveRows ?? []) as EmployeeLeave[]) {
+    (leavesByEmployee[leave.employee_id] ??= []).push(leave);
+  }
   const employeesVersion = employees
-    .map((employee) => `${employee.id}:${employee.name}:${employee.display_name ?? ""}:${employee.employee_code ?? ""}:${employee.role}:${employee.active}`)
+    .map((employee) => `${employee.id}:${employee.name}:${employee.display_name ?? ""}:${employee.employee_code ?? ""}:${employee.role}:${employee.active}:${employee.reminders_enabled}`)
     .join("|");
 
   return (
@@ -48,7 +63,7 @@ export default async function AdminEmployeesPage() {
             <BrandMark className="mb-3" />
             <h1 className="text-3xl font-semibold tracking-tight text-slate-950">พนักงาน</h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              แก้ไขชื่อทางการ รหัสพนักงาน สิทธิ์ และสถานะการใช้งาน
+              แก้ไขชื่อทางการ รหัสพนักงาน สิทธิ์ สถานะการใช้งาน การแจ้งเตือน และวันลา
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -73,6 +88,8 @@ export default async function AdminEmployeesPage() {
           key={employeesVersion}
           initialEmployees={employees}
           todayStatusByEmployee={todayStatusByEmployee}
+          initialLeavesByEmployee={leavesByEmployee}
+          today={today}
         />
       </div>
     </main>

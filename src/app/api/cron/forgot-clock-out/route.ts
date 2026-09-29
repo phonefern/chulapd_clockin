@@ -22,6 +22,7 @@ export async function GET(req: NextRequest) {
 
   const link = liffUrl();
   let sent = 0;
+  let lastError: string | null = null;
 
   for (const employee of result.targets) {
     try {
@@ -31,8 +32,18 @@ export async function GET(req: NextRequest) {
       );
       sent++;
     } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
       console.error("forgot-clock-out push failed for", employee.id, err);
     }
+  }
+
+  // Surface a total LINE failure (e.g. monthly quota exhausted, bad token) as a
+  // non-2xx so the scheduler records a failed execution instead of a silent success.
+  if (result.targets.length > 0 && sent === 0) {
+    return NextResponse.json(
+      { ok: false, checked: result.checked, targets: result.targets.length, sent, error: lastError },
+      { status: 502 }
+    );
   }
 
   return NextResponse.json({ ok: true, checked: result.checked, sent });

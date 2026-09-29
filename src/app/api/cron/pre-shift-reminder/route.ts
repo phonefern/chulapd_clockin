@@ -70,14 +70,31 @@ export async function GET(req: NextRequest) {
   }
 
   let sent = 0;
+  let lastError: string | null = null;
   for (const employee of result.targets) {
     try {
       await pushLineMessage(employee.lineUserId, reminderText(phase, employee));
       sent++;
     } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
       console.error(`pre-shift-reminder ${phase} push failed for`, employee.id, err);
     }
   }
 
-  return NextResponse.json({ ok: true, phase, checked: result.checked, sent });
+  // Surface a total LINE failure (e.g. monthly quota exhausted, bad token) as a
+  // non-2xx so the scheduler records a failed execution instead of a silent success.
+  if (result.targets.length > 0 && sent === 0) {
+    return NextResponse.json(
+      { ok: false, phase, checked: result.checked, targets: result.targets.length, sent, error: lastError },
+      { status: 502 }
+    );
+  }
+
+  return NextResponse.json({
+    ok: true,
+    phase,
+    checked: result.checked,
+    skippedOnLeave: result.skippedOnLeave,
+    sent,
+  });
 }

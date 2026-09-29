@@ -1,6 +1,3 @@
 {
-  "crons": [
-    { "path": "/api/cron/late-clock-in", "schedule": "45 1 * * 1-5" },
-    { "path": "/api/cron/forgot-clock-out", "schedule": "0 10 * * 1-5" }
-  ]
+  "crons": []
 }
