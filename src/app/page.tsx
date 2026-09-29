@@ -1,9 +1,24 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Clock3, History, LocateFixed, MapPin, RefreshCw } from "lucide-react";
+import {
+  CalendarOff,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  History,
+  LocateFixed,
+  MapPin,
+  RefreshCw,
+} from "lucide-react";
 import { toast } from "sonner";
 import { BrandMark } from "@/components/brand-mark";
+import { MyLeavePanel } from "@/components/liff/my-leave-panel";
+import {
+  RemoteClockOutDialog,
+  type RemoteClockOutQuota,
+  type RemoteClockOutTarget,
+} from "@/components/liff/remote-clock-out-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -70,6 +85,8 @@ type MyStats = {
     rows: HistoryRow[];
   };
 };
+
+type View = "today" | "history" | "leave";
 
 type Geofence = {
   allowed: boolean;
@@ -150,6 +167,33 @@ function formatDuration(ms: number) {
   return `${h}:${m}:${s}`;
 }
 
+function formatDateKeyInBangkok(date: Date) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(date);
+}
+
+function formatHmInBangkok(date: Date) {
+  return new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Bangkok",
+  }).format(date);
+}
+
+// Rich menu buttons deep-link into a view, e.g. https://liff.line.me/<id>?view=leave.
+// Before liff.init() resolves, LIFF carries the query inside `liff.state`.
+function viewFromUrl(): View | null {
+  const params = new URLSearchParams(window.location.search);
+  let view = params.get("view");
+  const liffState = params.get("liff.state");
+  if (!view && liffState) {
+    view = new URLSearchParams(liffState.includes("?") ? liffState.split("?")[1] : liffState).get(
+      "view"
+    );
+  }
+  return view === "leave" || view === "history" ? view : null;
+}
+
 function getCurrentPosition(): Promise<GeolocationPosition> {
   return new Promise((resolve, reject) => {
     navigator.geolocation.getCurrentPosition(resolve, reject, {
@@ -160,7 +204,7 @@ function getCurrentPosition(): Promise<GeolocationPosition> {
 }
 
 export default function Home() {
-  const [view, setView] = useState<"today" | "history">("today");
+  const [view, setView] = useState<View>("today");
   const [status, setStatus] = useState("กำลังเชื่อมต่อ LINE...");
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [attendance, setAttendance] = useState<Attendance | null>(null);
@@ -174,6 +218,9 @@ export default function Home() {
   const [undoBusy, setUndoBusy] = useState(false);
   const [confirmingEarlyClockOut, setConfirmingEarlyClockOut] = useState(false);
   const [now, setNow] = useState(() => new Date());
+  const [remoteQuota, setRemoteQuota] = useState<RemoteClockOutQuota | null>(null);
+  const [openRows, setOpenRows] = useState<RemoteClockOutTarget[]>([]);
+  const [remoteTarget, setRemoteTarget] = useState<RemoteClockOutTarget | null>(null);
   const positionRef = useRef<{ lat: number; lng: number; accuracy: number } | null>(null);
 
   async function refreshLocation() {
@@ -198,9 +245,22 @@ export default function Home() {
     }
   }
 
+  async function loadRemoteClockOutState() {
+    try {
+      const res = await fetch("/api/attendance/remote-clock-out");
+      const data = await res.json();
+      if (!res.ok) return;
+      setRemoteQuota(data.quota);
+      setOpenRows(data.openRows);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
   useEffect(() => {
     (async () => {
       try {
+        const deepLinkView = viewFromUrl();
         const liff = (await import("@line/liff")).default;
         await liff.init({ liffId: process.env.NEXT_PUBLIC_LIFF_ID! });
 
@@ -230,12 +290,15 @@ export default function Home() {
 
         setEmployee(data.employee);
         setStatus("");
+        const requestedView = deepLinkView ?? viewFromUrl();
+        if (requestedView) setView(requestedView);
 
         const todayRes = await fetch("/api/attendance/today");
         const todayData = await todayRes.json();
         setAttendance(todayData.attendance);
 
         refreshLocation();
+        loadRemoteClockOutState();
       } catch (err) {
         console.error(err);
         setStatus(
@@ -408,6 +471,23 @@ export default function Home() {
       ? new Date(attendance.clock_out_at).getTime() + CLOCK_OUT_UNDO_WINDOW_MS - now.getTime()
       : 0;
   const showUndoClockOut = undoMsRemaining > 0;
+  const todayKey = formatDateKeyInBangkok(now);
+  const pastOpenRows = openRows.filter((row) => row.work_date !== todayKey);
+  const canRemoteClockOutToday =
+    clockedIn && !clockedOut && !locating && !!geofence && !geofence.allowed;
+  const remoteDefaultTime =
+    remoteTarget && remoteTarget.work_date === todayKey
+      ? formatHmInBangkok(now)
+      : `${String(WORK_END_HOUR).padStart(2, "0")}:${String(WORK_END_MINUTE).padStart(2, "0")}`;
+
+  function openRemoteClockOutToday() {
+    if (!attendance?.clock_in_at) return;
+    setRemoteTarget({
+      id: attendance.id,
+      work_date: attendance.work_date,
+      clock_in_at: attendance.clock_in_at,
+    });
+  }
   const historyLoading = view === "history" && !historyError && historyStats?.month !== historyMonth;
   const canGoPrev = historyStats ? historyStats.month > historyStats.joinMonth : true;
   const canGoNext = historyStats ? historyStats.month < historyStats.currentMonth : false;
@@ -441,7 +521,23 @@ export default function Home() {
           </div>
         </CardHeader>
 
-        {view === "history" ? (
+        {view === "leave" ? (
+          <>
+            <CardContent>
+              <MyLeavePanel today={todayKey} />
+            </CardContent>
+            <CardFooter>
+              <Button
+                className="h-11 w-full"
+                onClick={() => setView("today")}
+                type="button"
+                variant="secondary"
+              >
+                กลับไปหน้าวันนี้
+              </Button>
+            </CardFooter>
+          </>
+        ) : view === "history" ? (
           <>
             <CardContent className="grid gap-4">
               <div className="rounded-lg border bg-background p-4">
@@ -633,6 +729,67 @@ export default function Home() {
             </div>
           )}
 
+          {canRemoteClockOutToday && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              <p className="font-medium">ลืม Clock out ก่อนออกจากที่ทำงาน?</p>
+              <p className="mt-1 text-xs">
+                ลงเวลาออกนอกพื้นที่ได้
+                {remoteQuota && ` (เหลือ ${remoteQuota.remaining}/${remoteQuota.limit} ครั้งเดือนนี้)`}
+              </p>
+              <Button
+                className="mt-2 w-full"
+                disabled={!!remoteQuota && remoteQuota.remaining <= 0}
+                onClick={openRemoteClockOutToday}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                ลงเวลาออกนอกพื้นที่
+              </Button>
+            </div>
+          )}
+
+          {pastOpenRows.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              <p className="font-medium">วันที่ยังไม่ได้ Clock out</p>
+              <p className="mt-1 text-xs">
+                ลงเวลาออกย้อนหลังได้
+                {remoteQuota && ` (เหลือ ${remoteQuota.remaining}/${remoteQuota.limit} ครั้งเดือนนี้)`}
+              </p>
+              <ul className="mt-2 grid gap-2">
+                {pastOpenRows.map((row) => (
+                  <li key={row.id} className="flex items-center justify-between gap-2">
+                    <span>
+                      {formatShortDate(row.work_date)} · เข้า {formatTime(row.clock_in_at)} น.
+                    </span>
+                    <Button
+                      disabled={!!remoteQuota && remoteQuota.remaining <= 0}
+                      onClick={() => setRemoteTarget(row)}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      ลงเวลาออก
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <Button
+            className="w-full justify-between"
+            onClick={() => setView("leave")}
+            type="button"
+            variant="outline"
+          >
+            <span className="inline-flex items-center gap-2">
+              <CalendarOff className="size-4" />
+              แจ้งลา
+            </span>
+            <ChevronRight className="size-4" />
+          </Button>
+
           <Button
             className="w-full justify-between"
             onClick={() => setView("history")}
@@ -680,6 +837,22 @@ export default function Home() {
           </>
         )}
       </Card>
+
+      <RemoteClockOutDialog
+        key={remoteTarget?.id ?? "none"}
+        target={remoteTarget}
+        isToday={remoteTarget?.work_date === todayKey}
+        defaultTime={remoteDefaultTime}
+        quota={remoteQuota}
+        getPosition={() => positionRef.current}
+        onClose={() => setRemoteTarget(null)}
+        onDone={(updated, quota) => {
+          if (updated.id === attendance?.id) setAttendance(updated);
+          setOpenRows((rows) => rows.filter((row) => row.id !== updated.id));
+          setRemoteQuota(quota);
+          setRemoteTarget(null);
+        }}
+      />
 
       <AlertDialog open={confirmingEarlyClockOut} onOpenChange={setConfirmingEarlyClockOut}>
         <AlertDialogContent>

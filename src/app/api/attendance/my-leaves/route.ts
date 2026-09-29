@@ -1,56 +1,52 @@
 import { NextRequest, NextResponse } from "next/server";
 import { LEAVE_COLUMNS, parseLeaveInput } from "@/lib/leaves";
-import { getAdminSessionFromRequest } from "@/lib/requireAdminSession";
+import { getSession } from "@/lib/requireSession";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { todayInBangkok } from "@/lib/workDate";
 
-// Lists leaves that haven't ended yet (today onward), optionally for a single employee.
+// The signed-in employee's leaves that haven't ended yet.
 export async function GET(req: NextRequest) {
-  const session = await getAdminSessionFromRequest(req);
+  const session = await getSession(req);
   if (!session) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const employeeId = req.nextUrl.searchParams.get("employee");
   const supabase = getSupabaseAdmin();
-  let query = supabase
+  const { data, error } = await supabase
     .from("employee_leaves")
     .select(LEAVE_COLUMNS)
+    .eq("employee_id", session.employeeId)
     .gte("end_date", todayInBangkok())
     .order("start_date", { ascending: true });
 
-  if (employeeId) {
-    query = query.eq("employee_id", employeeId);
-  }
-
-  const { data, error } = await query;
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ leaves: data });
+  return NextResponse.json({ leaves: data, today: todayInBangkok() });
 }
 
 export async function POST(req: NextRequest) {
-  const session = await getAdminSessionFromRequest(req);
+  const session = await getSession(req);
   if (!session) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const body = await req.json().catch(() => ({}));
-  if (typeof body.employee_id !== "string" || !body.employee_id) {
-    return NextResponse.json({ error: "employee_id is required" }, { status: 400 });
-  }
-
-  const input = parseLeaveInput(body);
+  const input = parseLeaveInput(await req.json().catch(() => ({})));
   if ("error" in input) {
     return NextResponse.json({ error: input.error }, { status: 400 });
+  }
+  if (input.start_date < todayInBangkok()) {
+    return NextResponse.json(
+      { error: "แจ้งลาย้อนหลังไม่ได้ กรุณาติดต่อผู้ดูแลระบบ" },
+      { status: 400 }
+    );
   }
 
   const supabase = getSupabaseAdmin();
   const { data: leave, error } = await supabase
     .from("employee_leaves")
-    .insert({ employee_id: body.employee_id, ...input, created_by: "admin" })
+    .insert({ employee_id: session.employeeId, ...input, created_by: "employee" })
     .select(LEAVE_COLUMNS)
     .single();
 

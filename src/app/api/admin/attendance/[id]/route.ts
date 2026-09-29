@@ -97,6 +97,7 @@ export async function PATCH(
       clock_out_at: clockOutAt,
       total_minutes: totalMinutes,
       updated_at: updatedAt,
+      ...(clockOutAt ? {} : { clock_out_method: null, clock_out_note: null }),
     })
     .eq("id", id)
     .select("id, work_date, clock_in_at, clock_out_at, total_minutes, status")

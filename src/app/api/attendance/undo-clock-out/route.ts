@@ -38,6 +38,8 @@ export async function POST(req: NextRequest) {
       clock_out_lat: null,
       clock_out_lng: null,
       clock_out_accuracy: null,
+      clock_out_method: null,
+      clock_out_note: null,
       total_minutes: null,
       updated_at: now,
     })

@@ -1,0 +1,43 @@
+<!doctype html>
+<!-- Source for the 2500x843 LINE rich menu image. Render with:
+     msedge --headless --disable-gpu --hide-scrollbars --window-size=2500,843 --screenshot=richmenu.png richmenu.html
+     Left half -> LIFF home (clock in/out), right half -> LIFF ?view=leave (see setup-richmenu.js). -->
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 2500px; height: 843px; overflow: hidden; }
+  body { display: flex; font-family: "Leelawadee UI", "Tahoma", sans-serif; }
+  .panel { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 44px; }
+  .clock { background: #16a34a; color: #fff; }
+  .leave { background: #f0fdf4; color: #14532d; border-left: 10px solid #bbf7d0; }
+  .icon { width: 260px; height: 260px; }
+  .title { font-size: 150px; font-weight: 700; line-height: 1.1; }
+  .sub { font-size: 76px; font-weight: 400; opacity: .85; line-height: 1.1; }
+</style>
+</head>
+<body>
+  <div class="panel clock">
+    <svg class="icon" viewBox="0 0 512 512" fill="none" stroke="#fff" stroke-linecap="round">
+      <circle cx="256" cy="256" r="200" stroke-width="34"/>
+      <line x1="256" y1="256" x2="256" y2="130" stroke-width="32"/>
+      <line x1="256" y1="256" x2="344" y2="300" stroke-width="32"/>
+    </svg>
+    <div class="title">ลงเวลาทำงาน</div>
+    <div class="sub">Clock in / Clock out</div>
+  </div>
+  <div class="panel leave">
+    <svg class="icon" viewBox="0 0 512 512" fill="none" stroke="#16a34a" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="56" y="96" width="400" height="360" rx="48" stroke-width="32"/>
+      <line x1="56" y1="196" x2="456" y2="196" stroke-width="32"/>
+      <line x1="160" y1="56" x2="160" y2="130" stroke-width="32"/>
+      <line x1="352" y1="56" x2="352" y2="130" stroke-width="32"/>
+      <line x1="196" y1="268" x2="316" y2="388" stroke-width="32"/>
+      <line x1="316" y1="268" x2="196" y2="388" stroke-width="32"/>
+    </svg>
+    <div class="title">แจ้งลา</div>
+    <div class="sub">Leave</div>
+  </div>
+</body>
+</html>

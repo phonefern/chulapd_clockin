@@ -58,6 +58,7 @@ export async function POST(req: NextRequest) {
       clock_out_lat: lat,
       clock_out_lng: lng,
       clock_out_accuracy: typeof accuracy === "number" ? accuracy : null,
+      clock_out_method: "geofence",
       total_minutes: totalMinutes,
       updated_at: clockOutAt.toISOString(),
     })

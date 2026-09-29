@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ArrowUpDown, BellOff, CalendarOff, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import type { LeavePeriod } from "@/lib/leaves";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -54,8 +55,6 @@ export type Employee = {
   created_at: string;
 };
 
-export type LeavePeriod = "full" | "morning" | "afternoon";
-
 export type EmployeeLeave = {
   id: string;
   employee_id: string;
@@ -63,6 +62,7 @@ export type EmployeeLeave = {
   end_date: string;
   period: LeavePeriod;
   note: string | null;
+  created_by: "admin" | "employee";
   created_at: string;
 };
 
@@ -608,8 +608,12 @@ export function EmployeesTable({
                       >
                         <div>
                           <p>{formatLeaveRange(leave)}</p>
-                          {leave.note && (
-                            <p className="text-xs text-muted-foreground">{leave.note}</p>
+                          {(leave.note || leave.created_by === "employee") && (
+                            <p className="text-xs text-muted-foreground">
+                              {[leave.note, leave.created_by === "employee" ? "พนักงานแจ้งเองผ่าน LINE" : null]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </p>
                           )}
                         </div>
                         <Button

@@ -1,18 +1,17 @@
-// One-off script: creates a LINE rich menu (single button -> LIFF clock-in page)
+// One-off script: creates a LINE rich menu with two buttons
+//   left  -> LIFF home (clock in / clock out)
+//   right -> LIFF leave form (?view=leave)
 // and sets it as the default menu for all OA friends.
-// Usage: node scripts/setup-richmenu.js path/to/image.png
+// The image source is scripts/richmenu/richmenu.html (rendered to richmenu.png, 2500x843).
+// Usage: node scripts/setup-richmenu.js [path/to/image.png]
 const fs = require("fs");
 
 const TOKEN = process.env.LINE_MESSAGING_CHANNEL_ACCESS_TOKEN;
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID;
-const imagePath = process.argv[2];
+const imagePath = process.argv[2] ?? `${__dirname}/richmenu/richmenu.png`;
 
 if (!TOKEN || !LIFF_ID) {
   console.error("Missing LINE_MESSAGING_CHANNEL_ACCESS_TOKEN or NEXT_PUBLIC_LIFF_ID in env");
-  process.exit(1);
-}
-if (!imagePath) {
-  console.error("Usage: node scripts/setup-richmenu.js <image.png>");
   process.exit(1);
 }
 
@@ -23,8 +22,12 @@ const richMenuDef = {
   chatBarText: "ลงเวลาทำงาน",
   areas: [
     {
-      bounds: { x: 0, y: 0, width: 2500, height: 843 },
-      action: { type: "uri", uri: `https://liff.line.me/${LIFF_ID}` },
+      bounds: { x: 0, y: 0, width: 1250, height: 843 },
+      action: { type: "uri", label: "ลงเวลาทำงาน", uri: `https://liff.line.me/${LIFF_ID}` },
+    },
+    {
+      bounds: { x: 1250, y: 0, width: 1250, height: 843 },
+      action: { type: "uri", label: "แจ้งลา", uri: `https://liff.line.me/${LIFF_ID}?view=leave` },
     },
   ],
 };

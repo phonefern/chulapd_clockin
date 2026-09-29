@@ -30,6 +30,8 @@ type AttendanceRow = {
   id: string;
   clock_in_at: string | null;
   clock_out_at: string | null;
+  clock_out_method: "geofence" | "remote" | null;
+  clock_out_note: string | null;
   total_minutes: number | null;
   status: string;
   employees: { name: string; display_name: string | null; employee_code: string | null } | null;
@@ -79,7 +81,7 @@ export default async function AdminPage({
   const { data, error } = await supabase
     .from("attendance")
     .select(
-      "id, clock_in_at, clock_out_at, total_minutes, status, employees(name, display_name, employee_code)"
+      "id, clock_in_at, clock_out_at, clock_out_method, clock_out_note, total_minutes, status, employees(name, display_name, employee_code)"
     )
     .eq("work_date", workDate)
     .order("clock_in_at", { ascending: true });
@@ -230,7 +232,17 @@ export default async function AdminPage({
                       </div>
                     </TableCell>
                     <TableCell className="font-mono text-xs text-slate-600">{formatTime(row.clock_in_at)}</TableCell>
-                    <TableCell className="font-mono text-xs text-slate-600">{formatTime(row.clock_out_at)}</TableCell>
+                    <TableCell className="font-mono text-xs text-slate-600">
+                      {formatTime(row.clock_out_at)}
+                      {row.clock_out_method === "remote" && (
+                        <span
+                          className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 font-sans text-[10px] font-medium text-amber-800"
+                          title={row.clock_out_note ?? "พนักงานลงเวลาออกเองนอกพื้นที่"}
+                        >
+                          นอกพื้นที่
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell className="font-mono text-sm font-medium text-slate-700">
                       {formatHours(row.total_minutes)}
                     </TableCell>

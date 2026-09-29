@@ -11,6 +11,7 @@ import {
 } from "@/components/admin/employees-table";
 import { buttonVariants } from "@/components/ui/button";
 import { getAdminSession } from "@/lib/requireAdminSession";
+import { LEAVE_COLUMNS } from "@/lib/leaves";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { todayInBangkok } from "@/lib/workDate";
 import { cn } from "@/lib/utils";
@@ -38,7 +39,7 @@ export default async function AdminEmployeesPage() {
       .eq("work_date", today),
     supabase
       .from("employee_leaves")
-      .select("id, employee_id, start_date, end_date, period, note, created_at")
+      .select(LEAVE_COLUMNS)
       .gte("end_date", today)
       .order("start_date", { ascending: true }),
   ]);
