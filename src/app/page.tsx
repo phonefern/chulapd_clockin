@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
+  FileCheck2,
   History,
   LocateFixed,
   MapPin,
@@ -14,6 +15,7 @@ import {
 import { toast } from "sonner";
 import { BrandMark } from "@/components/brand-mark";
 import { MyLeavePanel } from "@/components/liff/my-leave-panel";
+import { MyReportsPanel } from "@/components/liff/my-reports-panel";
 import {
   RemoteClockOutDialog,
   type RemoteClockOutQuota,
@@ -86,7 +88,7 @@ type MyStats = {
   };
 };
 
-type View = "today" | "history" | "leave";
+type View = "today" | "history" | "leave" | "reports";
 
 type Geofence = {
   allowed: boolean;
@@ -191,7 +193,7 @@ function viewFromUrl(): View | null {
       "view"
     );
   }
-  return view === "leave" || view === "history" ? view : null;
+  return view === "leave" || view === "history" || view === "reports" ? view : null;
 }
 
 function getCurrentPosition(): Promise<GeolocationPosition> {
@@ -521,7 +523,23 @@ export default function Home() {
           </div>
         </CardHeader>
 
-        {view === "leave" ? (
+        {view === "reports" ? (
+          <>
+            <CardContent>
+              <MyReportsPanel />
+            </CardContent>
+            <CardFooter>
+              <Button
+                className="h-11 w-full"
+                onClick={() => setView("today")}
+                type="button"
+                variant="secondary"
+              >
+                กลับไปหน้าวันนี้
+              </Button>
+            </CardFooter>
+          </>
+        ) : view === "leave" ? (
           <>
             <CardContent>
               <MyLeavePanel today={todayKey} />
@@ -786,6 +804,19 @@ export default function Home() {
             <span className="inline-flex items-center gap-2">
               <CalendarOff className="size-4" />
               แจ้งลา
+            </span>
+            <ChevronRight className="size-4" />
+          </Button>
+
+          <Button
+            className="w-full justify-between"
+            onClick={() => setView("reports")}
+            type="button"
+            variant="outline"
+          >
+            <span className="inline-flex items-center gap-2">
+              <FileCheck2 className="size-4" />
+              รายงานรับรองของฉัน
             </span>
             <ChevronRight className="size-4" />
           </Button>

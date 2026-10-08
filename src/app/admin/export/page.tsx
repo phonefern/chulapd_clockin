@@ -12,6 +12,11 @@ import {
   Printer,
   Users,
 } from "lucide-react";
+import {
+  CreateApprovalLinkButton,
+  RevokeLinkButton,
+  SendReportsButton,
+} from "@/components/report/admin-report-actions";
 import { formatThaiDateTime } from "@/components/report/attendance-report-sheet";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -31,6 +36,7 @@ import {
   type MonthlyReport,
   type ReportApproval,
 } from "@/lib/attendanceReport";
+import { listActiveApprovalLinks, type ApprovalLink } from "@/lib/approvalLinks";
 import { getAdminSession } from "@/lib/requireAdminSession";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { cn } from "@/lib/utils";
@@ -111,12 +117,15 @@ export default async function AdminExportPage({
   const supabase = getSupabaseAdmin();
 
   let rows: Row[] = [];
+  let activeLinks: ApprovalLink[] = [];
   let errorMessage: string | null = null;
   try {
-    const [reports, latestByEmployee] = await Promise.all([
+    const [reports, latestByEmployee, links] = await Promise.all([
       buildMonthlyReports(supabase, month),
       getLatestApprovals(supabase, month),
+      listActiveApprovalLinks(supabase, month),
     ]);
+    activeLinks = links;
     rows = reports.map((report) => {
       const latest = latestByEmployee.get(report.employee.id);
       return { report, latest, state: approvalStateFor(report, latest) };
@@ -129,6 +138,11 @@ export default async function AdminExportPage({
   const staleCount = rows.filter((r) => r.state === "stale").length;
   const pendingCount = rows.filter((r) => r.state === "pending").length;
   const isFutureMonth = month > currentMonthInBangkok();
+  const monthLabel = formatThaiMonth(month);
+  const nameById = new Map(rows.map((r) => [r.report.employee.id, r.report.employee.name]));
+  const approvedUnsent = rows
+    .filter((r) => r.state === "approved" && !r.latest?.sent_to_employee_at)
+    .map((r) => ({ id: r.report.employee.id, name: r.report.employee.name }));
 
   return (
     <main className="min-h-screen bg-muted/30 px-4 py-8 text-slate-950 sm:px-6 lg:px-8">
@@ -158,6 +172,23 @@ export default async function AdminExportPage({
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            <CreateApprovalLinkButton
+              employees={rows.map((r) => ({
+                id: r.report.employee.id,
+                name: r.report.employee.name,
+                code: r.report.employee.code,
+                state: r.state,
+              }))}
+              month={month}
+              monthLabel={monthLabel}
+            />
+            <SendReportsButton
+              employees={approvedUnsent}
+              label={`ส่งทาง LINE (${approvedUnsent.length})`}
+              month={month}
+              monthLabel={monthLabel}
+              size="default"
+            />
             <a className={cn(buttonVariants({ variant: "outline" }), "gap-2")} href={csvHref(month, "all")}>
               <Download className="size-4" />
               CSV ทุกคน
@@ -261,12 +292,37 @@ export default async function AdminExportPage({
                       </span>
                       {latest && (
                         <small className="mt-1 block text-[11px] text-slate-400">
-                          {latest.approver_name} · {formatThaiDateTime(latest.approved_at)}
+                          {latest.approver_name}
+                          {latest.approved_via === "link" && " (ผ่านลิงก์)"} · {formatThaiDateTime(latest.approved_at)}
+                        </small>
+                      )}
+                      {state === "approved" && latest?.sent_to_employee_at && (
+                        <small className="block text-[11px] text-emerald-700">
+                          ส่ง LINE แล้ว {formatThaiDateTime(latest.sent_to_employee_at)}
                         </small>
                       )}
                     </TableCell>
                     <TableCell className="px-5 sm:px-6">
                       <div className="flex justify-end gap-2">
+                        {state === "approved" && latest && (
+                          <>
+                            <a
+                              className={buttonVariants({ variant: "ghost", size: "sm" })}
+                              href={`/api/reports/pdf/${latest.id}`}
+                              rel="noreferrer"
+                              target="_blank"
+                            >
+                              PDF
+                            </a>
+                            <SendReportsButton
+                              employees={[{ id: report.employee.id, name: report.employee.name }]}
+                              label={latest.sent_to_employee_at ? "ส่งอีกครั้ง" : "ส่ง LINE"}
+                              month={month}
+                              monthLabel={monthLabel}
+                              variant="ghost"
+                            />
+                          </>
+                        )}
                         <a
                           aria-label={`ดาวน์โหลด CSV ของ ${report.employee.name}`}
                           className={buttonVariants({ variant: "ghost", size: "sm" })}
@@ -296,6 +352,31 @@ export default async function AdminExportPage({
             </TableBody>
           </Table>
         </section>
+
+        {activeLinks.length > 0 && (
+          <section className="mt-7 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-100 px-5 py-4 sm:px-6">
+              <h2 className="text-base font-semibold text-slate-950">ลิงก์รับรองที่ยังใช้งานได้</h2>
+              <p className="mt-1 text-xs text-slate-500">
+                ลิงก์ที่ส่งให้หัวหน้าเดือนนี้ · หากส่งผิดคน กดยกเลิกได้ทันที
+              </p>
+            </div>
+            <ul className="divide-y divide-slate-100">
+              {activeLinks.map((link) => (
+                <li key={link.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3 text-sm sm:px-6">
+                  <span className="font-medium text-slate-800">
+                    {link.approver_name} · {link.approver_role}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-slate-500">
+                    {link.employee_ids.map((id) => nameById.get(id) ?? "พนักงานที่ปิดใช้งาน").join(", ")}
+                  </span>
+                  <span className="text-xs text-slate-400">หมดอายุ {formatThaiDateTime(link.expires_at)}</span>
+                  <RevokeLinkButton id={link.id} />
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
       </div>
     </main>
   );

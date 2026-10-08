@@ -357,10 +357,12 @@ export type ReportApproval = {
   approver_role: string;
   approver_email: string | null;
   approved_at: string;
+  approved_via: "admin" | "link";
+  sent_to_employee_at: string | null;
 };
 
 export const APPROVAL_COLUMNS =
-  "id, verification_id, employee_id, report_month, report_version, document_hash, approver_name, approver_role, approver_email, approved_at";
+  "id, verification_id, employee_id, report_month, report_version, document_hash, approver_name, approver_role, approver_email, approved_at, approved_via, sent_to_employee_at";
 
 export async function getLatestApprovals(
   supabase: Supabase,
@@ -389,4 +391,95 @@ export type ApprovalState = "approved" | "stale" | "pending";
 export function approvalStateFor(report: MonthlyReport, latest: ReportApproval | undefined): ApprovalState {
   if (!latest) return "pending";
   return latest.document_hash === report.documentHash ? "approved" : "stale";
+}
+
+type ReportSnapshot = ReturnType<typeof reportSnapshot>;
+type SnapshotDay = [string, string | null, string | null, number | null, ReportDayStatus, string | null];
+
+// Rebuilds the certified document exactly as it was approved, so a PDF sent later still shows
+// what was signed even if attendance rows were edited afterwards.
+export function reportFromSnapshot(snapshot: ReportSnapshot, documentHash: string): MonthlyReport {
+  const days = (snapshot.days as SnapshotDay[]).map(([date, clockInAt, clockOutAt, totalMinutes, status, note]) => ({
+    date,
+    isWeekend: isWeekend(date),
+    clockInAt,
+    clockOutAt,
+    totalMinutes,
+    status,
+    note,
+  }));
+  return {
+    month: snapshot.month,
+    periodStart: days[0]?.date ?? `${snapshot.month}-01`,
+    periodEnd: days[days.length - 1]?.date ?? lastDayOfMonth(snapshot.month),
+    monthInProgress: false,
+    documentNumber: snapshot.documentNumber,
+    employee: snapshot.employee,
+    days,
+    summary: { ...snapshot.summary, invalidDays: snapshot.summary.invalidDays ?? 0 },
+    documentHash,
+  };
+}
+
+export type ApprovalInput = {
+  approverName: string;
+  approverRole: string;
+  approvedBy: string | null;
+  approverEmail: string | null;
+  approvedVia: "admin" | "link";
+  approvalLinkId?: string;
+  userAgent?: string | null;
+};
+
+export type ApprovalResult =
+  | { ok: true; approval: ReportApproval }
+  | { ok: false; status: number; error: string; approval?: ReportApproval };
+
+// Certifies `report` if the caller saw the same data (`documentHash`) and it isn't already approved.
+export async function recordApproval(
+  supabase: Supabase,
+  report: MonthlyReport,
+  documentHash: string,
+  previous: ReportApproval | undefined,
+  input: ApprovalInput
+): Promise<ApprovalResult> {
+  if (documentHash !== report.documentHash) {
+    return {
+      ok: false,
+      status: 409,
+      error: "ข้อมูลในรายงานเปลี่ยนไประหว่างตรวจสอบ กรุณาโหลดหน้าใหม่แล้วตรวจสอบอีกครั้ง",
+    };
+  }
+  if (previous?.document_hash === report.documentHash) {
+    return { ok: false, status: 409, error: "รายงานฉบับนี้ได้รับการรับรองแล้ว", approval: previous };
+  }
+
+  const { data, error } = await supabase
+    .from("attendance_report_approvals")
+    .insert({
+      verification_id: newVerificationId(report.documentNumber),
+      employee_id: report.employee.id,
+      report_month: report.month,
+      report_version: (previous?.report_version ?? 0) + 1,
+      document_hash: report.documentHash,
+      snapshot: reportSnapshot(report),
+      approved_by: input.approvedBy,
+      approver_email: input.approverEmail,
+      approver_name: input.approverName,
+      approver_role: input.approverRole,
+      approved_via: input.approvedVia,
+      approval_link_id: input.approvalLinkId ?? null,
+      approver_user_agent: input.userAgent?.slice(0, 300) ?? null,
+    })
+    .select(APPROVAL_COLUMNS)
+    .single();
+
+  if (error || !data) {
+    // 23505 = unique violation: someone approved the same version at the same moment.
+    if (error?.code === "23505") {
+      return { ok: false, status: 409, error: "มีผู้รับรองรายงานนี้ไปแล้ว กรุณาโหลดหน้าใหม่" };
+    }
+    return { ok: false, status: 500, error: error?.message ?? "บันทึกไม่สำเร็จ" };
+  }
+  return { ok: true, approval: data as ReportApproval };
 }

@@ -2,13 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Sarabun } from "next/font/google";
 import { redirect } from "next/navigation";
-import QRCode from "qrcode";
-import { AlertTriangle, ArrowLeft, ChevronLeft, ChevronRight, CircleCheck } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ChevronLeft, ChevronRight, CircleCheck, Download } from "lucide-react";
 import { PrintButton } from "@/components/admin/print-button";
 import { ApproveReportButton } from "@/components/report/approve-report-button";
 import { AttendanceReportSheet } from "@/components/report/attendance-report-sheet";
 import { buttonVariants } from "@/components/ui/button";
 import { requestOrigin } from "@/lib/appUrl";
+import { verificationQrSvg } from "@/lib/reportQr";
 import {
   approvalStateFor,
   buildMonthlyReports,
@@ -97,15 +97,7 @@ export default async function AttendanceReportPage({
         reports.map(async (report) => {
             const latest = latestByEmployee.get(report.employee.id);
             const approved = approvalStateFor(report, latest) === "approved";
-            const qrSvg =
-              approved && latest
-                ? await QRCode.toString(`${origin}/verify/${latest.verification_id}`, {
-                    type: "svg",
-                    margin: 0,
-                    errorCorrectionLevel: "M",
-                    color: { dark: "#1b2f55", light: "#ffffff" },
-                  })
-                : null;
+            const qrSvg = approved && latest ? await verificationQrSvg(origin, latest.verification_id) : null;
           return { report, latest, qrSvg };
         })
       );
@@ -173,11 +165,22 @@ export default async function AttendanceReportPage({
           </form>
 
           <div className="ml-auto flex items-center gap-2">
-            {singleState === "approved" && (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
-                <CircleCheck className="size-3.5" />
-                รับรองแล้ว
-              </span>
+            {singleState === "approved" && single?.latest && (
+              <>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+                  <CircleCheck className="size-3.5" />
+                  รับรองแล้ว
+                </span>
+                <a
+                  className={cn(buttonVariants({ variant: "outline" }), "gap-2")}
+                  href={`/api/reports/pdf/${single.latest.id}`}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  <Download className="size-4" />
+                  PDF
+                </a>
+              </>
             )}
             {single && singleState !== "approved" && (
               <ApproveReportButton

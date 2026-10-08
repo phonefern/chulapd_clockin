@@ -269,16 +269,22 @@ export function AttendanceReportSheet({
             <div className="grid grid-cols-[auto_1fr] gap-x-[2mm] gap-y-[1.2mm]">
               <span className="text-slate-500">สถานะ:</span>
               {approval ? (
-                <span className="font-semibold text-emerald-700">✓ รับรองแล้ว (Digital Approval)</span>
+                <span className="inline-flex items-center gap-[1mm] font-semibold text-emerald-700">
+                  {/* Inline SVG: the PDF renderer has no system fonts, and Sarabun has no ✓ glyph. */}
+                  <svg viewBox="0 0 16 16" className="size-[3.2mm]" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="M3 8.5l3.2 3L13 4.5" />
+                  </svg>
+                  รับรองแล้ว (Digital Approval)
+                </span>
               ) : (
                 <span className="font-medium text-amber-700">รอการรับรอง</span>
               )}
               <span className="text-slate-500">รับรองเมื่อ:</span>
               <span>{approval ? formatThaiDateTime(approval.approved_at) : "–"}</span>
               <span className="text-slate-500">Verification ID:</span>
-              <span className="font-mono text-[8pt]">{approval?.verification_id ?? "–"}</span>
+              <span className="text-[8pt] tracking-wide">{approval?.verification_id ?? "–"}</span>
               <span className="text-slate-500">Document hash:</span>
-              <span className="font-mono text-[7pt] text-slate-500">
+              <span className="text-[7pt] tracking-wide text-slate-500">
                 {approval ? `${approval.document_hash.slice(0, 16)}…` : `${report.documentHash.slice(0, 16)}…`}
                 {approval && approval.report_version > 1 && ` · ฉบับที่ ${approval.report_version}`}
               </span>

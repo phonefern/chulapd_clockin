@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { buildMonthlyReport, getLatestApprovals, recordApproval } from "@/lib/attendanceReport";
+import { requestOrigin } from "@/lib/appUrl";
+import { approvalLinkUrl, createApprovalLink } from "@/lib/approvalLinks";
 import { getAdminSessionFromRequest } from "@/lib/requireAdminSession";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { isValidWorkMonth } from "@/lib/workDate";
@@ -8,6 +9,7 @@ function cleanText(value: unknown, max: number) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
 
+// Creates a shareable link a supervisor can open (no login) to approve the selected reports.
 export async function POST(req: NextRequest) {
   const session = await getAdminSessionFromRequest(req);
   if (!session) {
@@ -15,45 +17,33 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => ({}));
-  const { employeeId, month, documentHash } = body;
   const approverName = cleanText(body.approverName, 120);
   const approverRole = cleanText(body.approverRole, 120);
+  const { month, employeeIds } = body;
 
-  if (typeof employeeId !== "string" || !employeeId) {
-    return NextResponse.json({ error: "employeeId is required" }, { status: 400 });
-  }
   if (typeof month !== "string" || !isValidWorkMonth(month)) {
     return NextResponse.json({ error: "month must be YYYY-MM" }, { status: 400 });
+  }
+  if (!Array.isArray(employeeIds) || employeeIds.length === 0 || !employeeIds.every((id) => typeof id === "string")) {
+    return NextResponse.json({ error: "กรุณาเลือกพนักงานอย่างน้อย 1 คน" }, { status: 400 });
   }
   if (!approverName || !approverRole) {
     return NextResponse.json({ error: "กรุณากรอกชื่อและตำแหน่งผู้รับรอง" }, { status: 400 });
   }
 
-  const supabase = getSupabaseAdmin();
   try {
-    const [report, latest] = await Promise.all([
-      buildMonthlyReport(supabase, employeeId, month),
-      getLatestApprovals(supabase, month, employeeId),
-    ]);
-    if (!report) {
-      return NextResponse.json({ error: "ไม่พบพนักงาน" }, { status: 404 });
-    }
-
-    const result = await recordApproval(supabase, report, documentHash, latest.get(employeeId), {
+    const { token, link } = await createApprovalLink(getSupabaseAdmin(), {
+      month,
+      employeeIds,
       approverName,
       approverRole,
-      approvedBy: session.adminUserId,
-      approverEmail: session.email || null,
-      approvedVia: "admin",
-      userAgent: req.headers.get("user-agent"),
+      createdBy: session.adminUserId,
+      createdByEmail: session.email || null,
     });
-    if (!result.ok) {
-      return NextResponse.json({ error: result.error, approval: result.approval }, { status: result.status });
-    }
-    return NextResponse.json({ approval: result.approval });
+    return NextResponse.json({ url: approvalLinkUrl(await requestOrigin(), token), link });
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "รับรองไม่สำเร็จ" },
+      { error: err instanceof Error ? err.message : "สร้างลิงก์ไม่สำเร็จ" },
       { status: 500 }
     );
   }
