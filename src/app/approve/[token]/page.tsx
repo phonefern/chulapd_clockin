@@ -2,15 +2,17 @@ import type { Metadata } from "next";
 import { Sarabun } from "next/font/google";
 import { CircleX } from "lucide-react";
 import { AttendanceReportSheet } from "@/components/report/attendance-report-sheet";
-import { FitToWidth } from "@/components/report/fit-to-width";
 import { SupervisorApproval, type SupervisorItem } from "@/components/report/supervisor-approval";
 import { requestOrigin } from "@/lib/appUrl";
 import { resolveApprovalLink } from "@/lib/approvalLinks";
+import type { DayView } from "@/components/report/report-viewer";
 import {
   ORGANIZATION_NAME,
+  REPORT_STATUS_LABEL,
   approvalStateFor,
   buildMonthlyReports,
   getLatestApprovals,
+  type MonthlyReport,
 } from "@/lib/attendanceReport";
 import { verificationQrSvg } from "@/lib/reportQr";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
@@ -40,6 +42,36 @@ function formatThaiDate(iso: string) {
     year: "numeric",
     timeZone: "Asia/Bangkok",
   }).format(new Date(iso));
+}
+
+const WEEKDAY = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
+
+function formatTime(iso: string | null) {
+  if (!iso) return null;
+  return new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Bangkok",
+  }).format(new Date(iso));
+}
+
+function formatHours(minutes: number) {
+  return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
+function dayViews(report: MonthlyReport): DayView[] {
+  return report.days.map((d) => ({
+    date: d.date,
+    day: Number(d.date.slice(8)),
+    weekday: WEEKDAY[new Date(`${d.date}T12:00:00Z`).getUTCDay()],
+    clockIn: formatTime(d.clockInAt),
+    clockOut: formatTime(d.clockOutAt),
+    hours: d.totalMinutes === null ? null : formatHours(d.totalMinutes),
+    status: d.status,
+    label: REPORT_STATUS_LABEL[d.status],
+    note: d.note,
+  }));
 }
 
 const LINK_ERROR: Record<"not_found" | "expired" | "revoked", string> = {
@@ -93,16 +125,22 @@ export default async function SupervisorApprovePage({ params }: { params: Promis
         summary.invalidDays > 0 ? `เวลาไม่ถูกต้อง ${summary.invalidDays} วัน` : null,
         summary.incompleteDays > 0 ? `ไม่มีเวลาออก ${summary.incompleteDays} วัน` : null,
       ].filter((w): w is string => w !== null),
+      summaryView: {
+        recordedDays: summary.recordedDays,
+        totalHours: `${formatHours(summary.totalMinutes)} ชม.`,
+        noRecordDays: summary.noRecordDays,
+        leaveDays: summary.leaveDays,
+        editedCount: summary.editedCount,
+      },
+      days: dayViews(report),
     });
     const approved = state === "approved" && latest;
     sheets[report.employee.id] = (
-      <FitToWidth>
-        <AttendanceReportSheet
-          report={report}
-          approval={approved ? latest : null}
-          qrSvg={approved ? await verificationQrSvg(origin, latest.verification_id) : null}
-        />
-      </FitToWidth>
+      <AttendanceReportSheet
+        report={report}
+        approval={approved ? latest : null}
+        qrSvg={approved ? await verificationQrSvg(origin, latest.verification_id) : null}
+      />
     );
   }
 
@@ -144,6 +182,7 @@ export default async function SupervisorApprovePage({ params }: { params: Promis
             approverName={link.approver_name}
             approverRole={link.approver_role}
             items={items}
+            monthLabel={formatThaiMonth(link.report_month)}
             sheets={sheets}
             token={token}
           />

@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ChevronDown, CircleCheck, ShieldCheck } from "lucide-react";
+import { AlertTriangle, CircleCheck, FileText, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
+import { ReportViewer, type DayView, type ReportSummaryView } from "@/components/report/report-viewer";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
 export type SupervisorItem = {
   employeeId: string;
@@ -18,6 +18,8 @@ export type SupervisorItem = {
   noRecordDays: number;
   editedCount: number;
   warnings: string[];
+  summaryView: ReportSummaryView;
+  days: DayView[];
 };
 
 function formatTotal(minutes: number) {
@@ -30,7 +32,9 @@ export function SupervisorApproval({
   sheets,
   approverName,
   approverRole,
+  monthLabel,
 }: {
+  monthLabel: string;
   token: string;
   items: SupervisorItem[];
   sheets: Record<string, React.ReactNode>;
@@ -43,6 +47,7 @@ export function SupervisorApproval({
   const [open, setOpen] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [saving, setSaving] = useState(false);
+  const closeViewer = useCallback(() => setOpen(null), []);
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -85,13 +90,13 @@ export function SupervisorApproval({
   }
 
   const selectedPending = items.filter((i) => selected.has(i.employeeId) && i.state !== "approved").length;
+  const openItem = items.find((i) => i.employeeId === open) ?? null;
 
   return (
     <>
       <ul className="grid gap-3">
         {items.map((item) => {
           const approved = item.state === "approved";
-          const isOpen = open === item.employeeId;
           return (
             <li key={item.employeeId} className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
               <div className="flex items-start gap-3 p-4">
@@ -135,20 +140,31 @@ export function SupervisorApproval({
                 </div>
               </div>
               <button
-                className="flex w-full items-center justify-center gap-1 border-t border-slate-100 py-2.5 text-sm font-medium text-[#1b2f55] hover:bg-slate-50"
-                onClick={() => setOpen(isOpen ? null : item.employeeId)}
+                className="flex w-full items-center justify-center gap-1.5 border-t border-slate-100 py-3 text-sm font-medium text-[#1b2f55] hover:bg-slate-50"
+                onClick={() => setOpen(item.employeeId)}
                 type="button"
               >
-                {isOpen ? "ซ่อนรายงาน" : "ดูรายงานฉบับเต็ม"}
-                <ChevronDown className={cn("size-4 transition-transform", isOpen && "rotate-180")} />
+                <FileText className="size-4" />
+                ดูรายงานฉบับเต็ม
               </button>
-              {isOpen && <div className="border-t border-slate-100 bg-slate-100 p-2">{sheets[item.employeeId]}</div>}
             </li>
           );
         })}
       </ul>
 
-      {pendingIds.length > 0 && (
+      {openItem && (
+        <ReportViewer
+          code={openItem.code}
+          days={openItem.days}
+          monthLabel={monthLabel}
+          name={openItem.name}
+          onClose={closeViewer}
+          sheet={sheets[openItem.employeeId]}
+          summary={openItem.summaryView}
+        />
+      )}
+
+      {pendingIds.length > 0 && !openItem && (
         <div className="sticky bottom-0 mt-6 -mx-4 border-t border-slate-200 bg-white/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 backdrop-blur">
           <label className="flex items-start gap-2 text-sm text-slate-700">
             <input
