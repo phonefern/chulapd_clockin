@@ -66,7 +66,7 @@ export function formatMonthDailyLedgerReply(
   const rowByDate = new Map(summary.rows.map((row) => [row.work_date, row]));
   const lines = enumerateWorkDates(`${month}-01`, lastDayOfMonth(month)).map((date) => {
     const row = rowByDate.get(date);
-    if (!row?.clock_in_at) return `${formatShortDate(date)} ไม่มาทำงาน`;
+    if (!row?.clock_in_at) return `${formatShortDate(date)} ไม่มีข้อมูลการลงเวลา`;
     if (!row.clock_out_at) return `${formatShortDate(date)} ${formatTime(row.clock_in_at)} - ยังไม่ Clock out`;
     return `${formatShortDate(date)} ${formatTime(row.clock_in_at)} - ${formatTime(row.clock_out_at)}`;
   });

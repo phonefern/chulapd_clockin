@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getMonthlyAttendanceLedger } from "@/lib/attendanceExport";
+import { REPORT_STATUS_LABEL, buildMonthlyReports } from "@/lib/attendanceReport";
 import { getAdminSessionFromRequest } from "@/lib/requireAdminSession";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { resolveWorkMonth } from "@/lib/workDate";
 
 function formatTime(iso: string | null) {
   if (!iso) return "";
-  return new Intl.DateTimeFormat("th-TH", {
+  return new Intl.DateTimeFormat("en-GB", {
     hour: "2-digit",
     minute: "2-digit",
+    hour12: false,
     timeZone: "Asia/Bangkok",
   }).format(new Date(iso));
 }
@@ -41,22 +42,27 @@ export async function GET(req: NextRequest) {
   const supabase = getSupabaseAdmin();
 
   try {
-    const ledger = await getMonthlyAttendanceLedger(supabase, month, employeeId);
+    const reports = await buildMonthlyReports(supabase, month, employeeId ? [employeeId] : undefined);
+
     const rows = [
-      ["ชื่อพนักงาน", "รหัสพนักงาน", "วันที่", "เวลาเข้า", "เวลาออก", "ชั่วโมง", "สถานะ"],
-      ...ledger.map((row) => [
-        row.employeeName,
-        row.employeeCode ?? "",
-        row.workDate,
-        formatTime(row.clockInAt),
-        formatTime(row.clockOutAt),
-        formatHours(row.totalMinutes),
-        row.status,
-      ]),
+      ["ชื่อพนักงาน", "รหัสพนักงาน", "วันที่", "เวลาเข้า", "เวลาออก", "ชั่วโมง", "สถานะ", "หมายเหตุ"],
+      ...reports.flatMap((report) =>
+        report.days.map((day) => [
+          report.employee.name,
+          report.employee.code ?? "",
+          day.date,
+          formatTime(day.clockInAt),
+          formatTime(day.clockOutAt),
+          formatHours(day.totalMinutes),
+          day.status === "no_record" ? "ไม่มีข้อมูลการลงเวลา" : REPORT_STATUS_LABEL[day.status],
+          day.note ?? "",
+        ])
+      ),
     ];
-    const csv = `\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\r\n")}\r\n`;
+    const BOM = String.fromCharCode(0xfeff); // lets Excel detect UTF-8 for Thai text
+    const csv = `${BOM}${rows.map((row) => row.map(csvCell).join(",")).join("\r\n")}\r\n`;
     const employeeSuffix = employeeId
-      ? `_${sanitizeFilenamePart(ledger[0]?.employeeCode ?? employeeId)}`
+      ? `_${sanitizeFilenamePart(reports[0]?.employee.code ?? employeeId)}`
       : "";
 
     return new Response(csv, {

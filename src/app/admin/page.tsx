@@ -1,13 +1,10 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowRight, BarChart3, Clock3, FileClock, FileDown, Users, UserCheck } from "lucide-react";
+import { Clock3, FileClock, Users, UserCheck } from "lucide-react";
 import { AutoRefresh } from "@/components/admin/auto-refresh";
 import { DateNav } from "@/components/admin/date-nav";
 import { EditAttendanceButton } from "@/components/admin/edit-attendance-button";
-import { BrandMark } from "@/components/brand-mark";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -19,8 +16,8 @@ import {
 } from "@/components/ui/table";
 import { getAdminSession } from "@/lib/requireAdminSession";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
-import { resolveWorkDate, todayInBangkok } from "@/lib/workDate";
 import { cn } from "@/lib/utils";
+import { resolveWorkDate, todayInBangkok } from "@/lib/workDate";
 
 export const metadata: Metadata = {
   title: "Attendance วันนี้ · ChulaPD Attendance",
@@ -98,12 +95,9 @@ export default async function AdminPage({
       <div className="mx-auto max-w-7xl">
         <header className="mb-8 flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
           <div>
-            <div className="mb-3 flex flex-wrap items-center gap-3">
-              <BrandMark />
-              <p className="text-xs font-semibold tracking-[0.16em] text-emerald-700">
-                WORKFORCE OVERVIEW
-              </p>
-            </div>
+            <p className="mb-2 text-xs font-semibold tracking-[0.16em] text-emerald-700">
+              WORKFORCE OVERVIEW
+            </p>
             <h1 className="text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
               Attendance วันนี้
             </h1>
@@ -114,35 +108,11 @@ export default async function AdminPage({
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <AutoRefresh key={updatedAt} isToday={isToday} updatedAt={updatedAt} />
-            <Link href="/admin/stats" className={cn(buttonVariants({ variant: "outline" }), "gap-2")}>
-              <BarChart3 className="size-4" />
-              สถิติ
-              <ArrowRight className="size-4" />
-            </Link>
-            <Link href="/admin/export" className={cn(buttonVariants({ variant: "outline" }), "gap-2")}>
-              <FileDown className="size-4" />
-              ส่งออก
-              <ArrowRight className="size-4" />
-            </Link>
-            <Link href="/admin/employees" className={cn(buttonVariants({ variant: "outline" }), "gap-2")}>
-              <Users className="size-4" />
-              จัดการพนักงาน
-              <ArrowRight className="size-4" />
-            </Link>
-            <div className="hidden items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm sm:flex">
-              <span className="grid size-9 place-items-center rounded-lg bg-emerald-50 text-sm font-semibold text-emerald-700">
-                {session.email.charAt(0).toUpperCase()}
-              </span>
-              <div>
-                <p className="text-[11px] text-slate-500">ผู้ดูแลระบบ</p>
-                <p className="max-w-44 truncate text-xs font-medium text-slate-700">{session.email}</p>
-              </div>
-            </div>
           </div>
         </header>
 
         <section className="mb-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="สรุปการลงเวลา">
-          <Card className="border-slate-200 bg-white shadow-sm">
+          <Card className="border-slate-200 bg-white py-0 shadow-sm">
             <CardContent className="flex items-center gap-4 p-5">
               <span className="grid size-10 place-items-center rounded-xl bg-blue-50 text-blue-600">
                 <Users className="size-5" />
@@ -153,7 +123,7 @@ export default async function AdminPage({
               </div>
             </CardContent>
           </Card>
-          <Card className="border-slate-200 bg-white shadow-sm">
+          <Card className="border-slate-200 bg-white py-0 shadow-sm">
             <CardContent className="flex items-center gap-4 p-5">
               <span className="grid size-10 place-items-center rounded-xl bg-emerald-50 text-emerald-600">
                 <UserCheck className="size-5" />
@@ -164,7 +134,7 @@ export default async function AdminPage({
               </div>
             </CardContent>
           </Card>
-          <Card className="border-slate-200 bg-white shadow-sm">
+          <Card className="border-slate-200 bg-white py-0 shadow-sm">
             <CardContent className="flex items-center gap-4 p-5">
               <span className="grid size-10 place-items-center rounded-xl bg-amber-50 text-amber-600">
                 <Clock3 className="size-5" />
@@ -175,7 +145,7 @@ export default async function AdminPage({
               </div>
             </CardContent>
           </Card>
-          <Card className="border-slate-200 bg-white shadow-sm">
+          <Card className="border-slate-200 bg-white py-0 shadow-sm">
             <CardContent className="flex items-center gap-4 p-5">
               <span className="grid size-10 place-items-center rounded-xl bg-violet-50 text-violet-600">
                 <FileClock className="size-5" />

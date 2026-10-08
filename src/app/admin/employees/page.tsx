@@ -1,20 +1,15 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft, BarChart3, FileDown } from "lucide-react";
-import { BrandMark } from "@/components/brand-mark";
 import {
   EmployeesTable,
   type Employee,
   type EmployeeLeave,
   type TodayAttendance,
 } from "@/components/admin/employees-table";
-import { buttonVariants } from "@/components/ui/button";
 import { getAdminSession } from "@/lib/requireAdminSession";
 import { LEAVE_COLUMNS } from "@/lib/leaves";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { todayInBangkok } from "@/lib/workDate";
-import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
   title: "พนักงาน · ChulaPD Attendance",
@@ -31,7 +26,7 @@ export default async function AdminEmployeesPage() {
   const [{ data, error }, { data: todayRows }, { data: leaveRows }] = await Promise.all([
     supabase
       .from("employees")
-      .select("id, employee_code, name, display_name, line_user_id, role, active, reminders_enabled, created_at")
+      .select("id, employee_code, name, display_name, department, line_user_id, role, active, reminders_enabled, created_at")
       .order("created_at", { ascending: true }),
     supabase
       .from("attendance")
@@ -61,25 +56,10 @@ export default async function AdminEmployeesPage() {
       <div className="mx-auto max-w-7xl">
         <header className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-start">
           <div>
-            <BrandMark className="mb-3" />
             <h1 className="text-3xl font-semibold tracking-tight text-slate-950">พนักงาน</h1>
             <p className="mt-2 text-sm text-muted-foreground">
               แก้ไขชื่อทางการ รหัสพนักงาน สิทธิ์ สถานะการใช้งาน การแจ้งเตือน และวันลา
             </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Link href="/admin" className={cn(buttonVariants({ variant: "outline" }), "gap-2")}>
-              <ArrowLeft className="size-4" />
-              Attendance วันนี้
-            </Link>
-            <Link href="/admin/stats" className={cn(buttonVariants({ variant: "outline" }), "gap-2")}>
-              <BarChart3 className="size-4" />
-              สถิติ
-            </Link>
-            <Link href="/admin/export" className={cn(buttonVariants({ variant: "outline" }), "gap-2")}>
-              <FileDown className="size-4" />
-              ส่งออก
-            </Link>
           </div>
         </header>
 

@@ -1,12 +1,9 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft, Clock3, FileDown, Users, UserCheck } from "lucide-react";
+import { Clock3, Users, UserCheck } from "lucide-react";
 import { AttendanceCharts, type AttendanceChartPoint } from "@/components/admin/attendance-charts";
 import { RangePicker } from "@/components/admin/range-picker";
-import { BrandMark } from "@/components/brand-mark";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -19,7 +16,6 @@ import {
 import { getAdminSession } from "@/lib/requireAdminSession";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { addWorkDays, enumerateWorkDates, isValidWorkDate, todayInBangkok } from "@/lib/workDate";
-import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
   title: "สถิติ · ChulaPD Attendance",
@@ -185,7 +181,6 @@ export default async function AdminStatsPage({
       <div className="mx-auto max-w-7xl">
         <header className="mb-8 flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
           <div>
-            <BrandMark className="mb-3" />
             <h1 className="text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
               สถิติการลงเวลา
             </h1>
@@ -194,14 +189,6 @@ export default async function AdminStatsPage({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <Link href="/admin" className={cn(buttonVariants({ variant: "outline" }), "gap-2")}>
-              <ArrowLeft className="size-4" />
-              Attendance วันนี้
-            </Link>
-            <Link href="/admin/export" className={cn(buttonVariants({ variant: "outline" }), "gap-2")}>
-              <FileDown className="size-4" />
-              ส่งออก
-            </Link>
             <RangePicker from={from} to={to} today={today} />
           </div>
         </header>
@@ -213,7 +200,7 @@ export default async function AdminStatsPage({
         )}
 
         <section className="mb-7 grid gap-3 md:grid-cols-3" aria-label="สรุปสถิติ">
-          <Card className="border-slate-200 bg-white shadow-sm">
+          <Card className="border-slate-200 bg-white py-0 shadow-sm">
             <CardContent className="flex items-center gap-4 p-5">
               <span className="grid size-10 place-items-center rounded-xl bg-blue-50 text-blue-600">
                 <Users className="size-5" />
@@ -224,7 +211,7 @@ export default async function AdminStatsPage({
               </div>
             </CardContent>
           </Card>
-          <Card className="border-slate-200 bg-white shadow-sm">
+          <Card className="border-slate-200 bg-white py-0 shadow-sm">
             <CardContent className="flex items-center gap-4 p-5">
               <span className="grid size-10 place-items-center rounded-xl bg-emerald-50 text-emerald-600">
                 <UserCheck className="size-5" />
@@ -235,7 +222,7 @@ export default async function AdminStatsPage({
               </div>
             </CardContent>
           </Card>
-          <Card className="border-slate-200 bg-white shadow-sm">
+          <Card className="border-slate-200 bg-white py-0 shadow-sm">
             <CardContent className="flex items-center gap-4 p-5">
               <span className="grid size-10 place-items-center rounded-xl bg-amber-50 text-amber-600">
                 <Clock3 className="size-5" />

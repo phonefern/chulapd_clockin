@@ -2,7 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAdminSessionFromRequest } from "@/lib/requireAdminSession";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 
-const EDITABLE_FIELDS = ["display_name", "employee_code", "role", "active", "reminders_enabled"] as const;
+const EDITABLE_FIELDS = [
+  "display_name",
+  "employee_code",
+  "department",
+  "role",
+  "active",
+  "reminders_enabled",
+] as const;
 
 export async function PATCH(
   req: NextRequest,
@@ -27,8 +34,10 @@ export async function PATCH(
     }
   }
 
-  if (typeof update.employee_code === "string" && update.employee_code.trim() === "") {
-    update.employee_code = null;
+  for (const field of ["employee_code", "department"] as const) {
+    if (typeof update[field] === "string" && (update[field] as string).trim() === "") {
+      update[field] = null;
+    }
   }
 
   if (Object.keys(update).length === 0) {
@@ -42,7 +51,7 @@ export async function PATCH(
     .from("employees")
     .update(update)
     .eq("id", id)
-    .select("id, employee_code, name, display_name, line_user_id, role, active, reminders_enabled, created_at")
+    .select("id, employee_code, name, display_name, department, line_user_id, role, active, reminders_enabled, created_at")
     .single();
 
   if (error || !employee) {

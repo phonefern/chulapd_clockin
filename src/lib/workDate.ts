@@ -50,17 +50,18 @@ export function enumerateWorkDates(from: string, to: string): string[] {
   return dates;
 }
 
+// Month arithmetic is done on plain calendar numbers (Date.UTC), never on Bangkok-midnight
+// instants: shifting those across a month boundary overflows (e.g. Sep → "Oct 1").
 export function lastDayOfMonth(month: string): string {
   if (!isValidWorkMonth(month)) return lastDayOfMonth(currentMonthInBangkok());
-  const end = new Date(`${month}-01T00:00:00+07:00`);
-  end.setUTCMonth(end.getUTCMonth() + 1);
-  end.setUTCDate(end.getUTCDate() - 1);
-  return formatDateKeyInBangkok(end);
+  const [year, mm] = month.split("-").map(Number);
+  const days = new Date(Date.UTC(year, mm, 0)).getUTCDate();
+  return `${month}-${String(days).padStart(2, "0")}`;
 }
 
 export function addWorkMonths(month: string, months: number): string {
   const baseMonth = isValidWorkMonth(month) ? month : currentMonthInBangkok();
-  const date = new Date(`${baseMonth}-01T00:00:00+07:00`);
-  date.setUTCMonth(date.getUTCMonth() + months);
-  return formatDateKeyInBangkok(date).slice(0, 7);
+  const [year, mm] = baseMonth.split("-").map(Number);
+  const date = new Date(Date.UTC(year, mm - 1 + months, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 }

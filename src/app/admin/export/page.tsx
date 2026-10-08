@@ -1,13 +1,20 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft, Download } from "lucide-react";
-import { PrintButton } from "@/components/admin/print-button";
-import { BrandMark } from "@/components/brand-mark";
-import { Badge } from "@/components/ui/badge";
+import {
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  CircleCheck,
+  Clock3,
+  Download,
+  FileText,
+  Printer,
+  Users,
+} from "lucide-react";
+import { formatThaiDateTime } from "@/components/report/attendance-report-sheet";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -16,51 +23,34 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { getMonthlyAttendanceLedger, type MonthlyLedgerRow } from "@/lib/attendanceExport";
+import {
+  approvalStateFor,
+  buildMonthlyReports,
+  getLatestApprovals,
+  type ApprovalState,
+  type MonthlyReport,
+  type ReportApproval,
+} from "@/lib/attendanceReport";
 import { getAdminSession } from "@/lib/requireAdminSession";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
-import { resolveWorkMonth } from "@/lib/workDate";
 import { cn } from "@/lib/utils";
+import { addWorkMonths, currentMonthInBangkok, resolveWorkMonth } from "@/lib/workDate";
 
 export const metadata: Metadata = {
-  title: "ส่งออกรายงาน · ChulaPD Attendance",
+  title: "รายงานรับรอง · ChulaPD Attendance",
 };
 
-type EmployeeOption = {
-  id: string;
-  employee_code: string | null;
-  name: string;
-  display_name: string | null;
+type Row = {
+  report: MonthlyReport;
+  latest: ReportApproval | undefined;
+  state: ApprovalState;
 };
 
-function scalar(value: string | string[] | undefined) {
-  return Array.isArray(value) ? value[0] : value;
-}
-
-function formatTime(iso: string | null) {
-  if (!iso) return "-";
-  return new Intl.DateTimeFormat("th-TH", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Asia/Bangkok",
-  }).format(new Date(iso));
-}
-
-function formatHours(totalMinutes: number | null) {
-  if (totalMinutes === null) return "-";
-  const h = Math.floor(totalMinutes / 60);
-  const m = totalMinutes % 60;
-  return `${h}:${String(m).padStart(2, "0")}`;
-}
-
-function formatThaiDate(date: string) {
-  return new Intl.DateTimeFormat("th-TH-u-ca-buddhist", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    timeZone: "Asia/Bangkok",
-  }).format(new Date(`${date}T00:00:00+07:00`));
-}
+const STATE_BADGE: Record<ApprovalState, { label: string; className: string }> = {
+  approved: { label: "รับรองแล้ว", className: "bg-emerald-50 text-emerald-700 ring-emerald-200" },
+  pending: { label: "รอรับรอง", className: "bg-slate-100 text-slate-600 ring-slate-200" },
+  stale: { label: "ข้อมูลเปลี่ยนหลังรับรอง", className: "bg-amber-50 text-amber-800 ring-amber-200" },
+};
 
 function formatThaiMonth(month: string) {
   return new Intl.DateTimeFormat("th-TH-u-ca-buddhist", {
@@ -70,179 +60,241 @@ function formatThaiMonth(month: string) {
   }).format(new Date(`${month}-01T00:00:00+07:00`));
 }
 
+function formatTotal(minutes: number) {
+  return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
+function reportHref(month: string, employee: string) {
+  return `/admin/export/report?${new URLSearchParams({ month, employee }).toString()}`;
+}
+
+function csvHref(month: string, employee: string) {
+  return `/api/admin/export/attendance-csv?${new URLSearchParams({ month, employee }).toString()}`;
+}
+
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: typeof Users;
+  label: string;
+  value: number;
+  tone: string;
+}) {
+  return (
+    <Card className="border-slate-200 bg-white py-0 shadow-sm">
+      <CardContent className="flex items-center gap-4 p-5">
+        <span className={cn("grid size-10 place-items-center rounded-xl", tone)}>
+          <Icon className="size-5" />
+        </span>
+        <div>
+          <p className="text-xs text-slate-500">{label}</p>
+          <p className="mt-1 text-2xl font-semibold text-slate-950">{value}</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default async function AdminExportPage({
   searchParams,
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const session = await getAdminSession();
-  if (!session) {
-    redirect("/admin/login");
-  }
+  if (!session) redirect("/admin/login");
 
   const params = await searchParams;
   const month = resolveWorkMonth(params.month);
   const supabase = getSupabaseAdmin();
-  const { data: employeesData, error: employeesError } = await supabase
-    .from("employees")
-    .select("id, employee_code, name, display_name")
-    .eq("active", true)
-    .order("employee_code", { ascending: true });
 
-  const employees = (employeesData ?? []) as EmployeeOption[];
-  const employeeParam = scalar(params.employee);
-  const selectedEmployeeId =
-    employeeParam && employeeParam !== "all" && employees.some((employee) => employee.id === employeeParam)
-      ? employeeParam
-      : undefined;
-  const selectedEmployee = employees.find((employee) => employee.id === selectedEmployeeId) ?? null;
-  let ledger: MonthlyLedgerRow[] = [];
-  let errorMessage: string | null = employeesError?.message ?? null;
-
-  if (!employeesError) {
-    try {
-      ledger = await getMonthlyAttendanceLedger(supabase, month, selectedEmployeeId);
-    } catch (err) {
-      errorMessage = err instanceof Error ? err.message : "โหลดข้อมูลไม่สำเร็จ";
-    }
+  let rows: Row[] = [];
+  let errorMessage: string | null = null;
+  try {
+    const [reports, latestByEmployee] = await Promise.all([
+      buildMonthlyReports(supabase, month),
+      getLatestApprovals(supabase, month),
+    ]);
+    rows = reports.map((report) => {
+      const latest = latestByEmployee.get(report.employee.id);
+      return { report, latest, state: approvalStateFor(report, latest) };
+    });
+  } catch (err) {
+    errorMessage = err instanceof Error ? err.message : "โหลดข้อมูลไม่สำเร็จ";
   }
 
-  const employeeCount = new Set(ledger.map((row) => row.employeeId)).size;
-  const daysPresent = ledger.filter((row) => row.clockInAt).length;
-  const downloadParams = new URLSearchParams({ month, employee: selectedEmployeeId ?? "all" });
-  const downloadHref = `/api/admin/export/attendance-csv?${downloadParams.toString()}`;
+  const approvedCount = rows.filter((r) => r.state === "approved").length;
+  const staleCount = rows.filter((r) => r.state === "stale").length;
+  const pendingCount = rows.filter((r) => r.state === "pending").length;
+  const isFutureMonth = month > currentMonthInBangkok();
 
   return (
     <main className="min-h-screen bg-muted/30 px-4 py-8 text-slate-950 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
-        <header className="no-print mb-8 flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
+        <header className="mb-8 flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
           <div>
-            <BrandMark className="mb-3" />
+            <p className="mb-2 text-xs font-semibold tracking-[0.16em] text-[#1b2f55]">MONTHLY CERTIFICATION</p>
             <h1 className="text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
-              ส่งออกรายงานรับรองการทำงาน
+              รายงานรับรองเวลาปฏิบัติงาน
             </h1>
-            <p className="mt-2 text-sm text-slate-500">
-              ตารางรายเดือนสำหรับดาวน์โหลด CSV หรือพิมพ์ให้หัวหน้าลงนาม
-            </p>
+            <div className="mt-4 flex items-center gap-2">
+              <Link
+                aria-label="เดือนก่อนหน้า"
+                href={`/admin/export?month=${addWorkMonths(month, -1)}`}
+                className={buttonVariants({ variant: "outline", size: "icon-sm" })}
+              >
+                <ChevronLeft className="size-4" />
+              </Link>
+              <span className="min-w-32 text-center text-base font-semibold">{formatThaiMonth(month)}</span>
+              <Link
+                aria-label="เดือนถัดไป"
+                href={`/admin/export?month=${addWorkMonths(month, 1)}`}
+                className={buttonVariants({ variant: "outline", size: "icon-sm" })}
+              >
+                <ChevronRight className="size-4" />
+              </Link>
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <Link href="/admin" className={cn(buttonVariants({ variant: "outline" }), "gap-2")}>
-              <ArrowLeft className="size-4" />
-              Attendance วันนี้
-            </Link>
-            <a className={cn(buttonVariants({ variant: "outline" }), "gap-2")} href={downloadHref}>
+            <a className={cn(buttonVariants({ variant: "outline" }), "gap-2")} href={csvHref(month, "all")}>
               <Download className="size-4" />
-              ดาวน์โหลด CSV
+              CSV ทุกคน
             </a>
-            <PrintButton />
+            <Link
+              className={cn(buttonVariants(), "gap-2 bg-[#1b2f55] text-white hover:bg-[#1b2f55]/90")}
+              href={reportHref(month, "all")}
+            >
+              <Printer className="size-4" />
+              พิมพ์รายงานทุกคน
+            </Link>
           </div>
         </header>
 
-        <section className="no-print mb-7 grid gap-3 md:grid-cols-[minmax(360px,480px)_1fr_1fr]">
-          <form className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-2">
-            <div>
-              <label className="text-xs font-medium text-slate-500" htmlFor="month">
-                เดือน
-              </label>
-              <Input className="mt-2" id="month" name="month" type="month" defaultValue={month} />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-500" htmlFor="employee">
-                พนักงาน
-              </label>
-              <select
-                className="mt-2 h-8 w-full rounded-lg border border-input bg-background px-2.5 py-1 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                defaultValue={selectedEmployeeId ?? "all"}
-                id="employee"
-                name="employee"
-              >
-                <option value="all">ทั้งหมด</option>
-                {employees.map((employee) => (
-                  <option key={employee.id} value={employee.id}>
-                    {employee.employee_code ? `${employee.employee_code} · ` : ""}
-                    {employee.display_name ?? employee.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <button className={cn(buttonVariants({ size: "sm" }), "sm:col-span-2")} type="submit">
-              เปลี่ยนตัวกรอง
-            </button>
-          </form>
-          <Card className="border-slate-200 bg-white shadow-sm">
-            <CardContent className="p-5">
-              <p className="text-xs text-slate-500">ขอบเขตรายงาน</p>
-              <p className="mt-1 truncate text-lg font-semibold text-slate-950">
-                {selectedEmployee ? selectedEmployee.display_name ?? selectedEmployee.name : "ทั้งหมด"}
-              </p>
-              <p className="mt-1 text-xs text-slate-400">
-                {selectedEmployee ? selectedEmployee.employee_code ?? "ไม่มีรหัสพนักงาน" : `${employeeCount} คน`}
-              </p>
-            </CardContent>
-          </Card>
-          <Card className="border-slate-200 bg-white shadow-sm">
-            <CardContent className="p-5">
-              <p className="text-xs text-slate-500">รายการมาทำงาน</p>
-              <p className="mt-1 text-2xl font-semibold text-slate-950">{daysPresent}</p>
-            </CardContent>
-          </Card>
+        <section className="mb-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="สรุปสถานะการรับรอง">
+          <StatCard icon={Users} label="พนักงาน" value={rows.length} tone="bg-blue-50 text-blue-600" />
+          <StatCard icon={CircleCheck} label="รับรองแล้ว" value={approvedCount} tone="bg-emerald-50 text-emerald-600" />
+          <StatCard icon={Clock3} label="รอรับรอง" value={pendingCount} tone="bg-slate-100 text-slate-600" />
+          <StatCard
+            icon={AlertTriangle}
+            label="ต้องรับรองใหม่"
+            value={staleCount}
+            tone="bg-amber-50 text-amber-600"
+          />
         </section>
 
-        <section className="print-ledger overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex flex-col justify-between gap-3 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:px-6">
+        {errorMessage && (
+          <p className="mb-4 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+            {errorMessage}
+          </p>
+        )}
+
+        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-col justify-between gap-2 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:px-6">
             <div>
-              <h2 className="text-base font-semibold text-slate-950">
-                รายงานการลงเวลาประจำเดือน {formatThaiMonth(month)}
-              </h2>
+              <h2 className="text-base font-semibold text-slate-950">รายงานรายบุคคล</h2>
               <p className="mt-1 text-xs text-slate-500">
-                {selectedEmployee ? `เฉพาะ ${selectedEmployee.display_name ?? selectedEmployee.name}` : "พนักงานทั้งหมด"} · มาแล้ว {daysPresent} รายการ
+                เปิดรายงานเพื่อตรวจสอบ พิมพ์ (A4 แนวนอน 1 หน้า) และรับรองแบบดิจิทัล
               </p>
             </div>
-            <Badge className="w-fit" variant="secondary">
-              {ledger.length} รายการ
-            </Badge>
+            {isFutureMonth && (
+              <span className="text-xs text-amber-700">เดือนที่เลือกยังมาไม่ถึง</span>
+            )}
           </div>
-
-          {errorMessage && (
-            <p className="m-5 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
-              {errorMessage}
-            </p>
-          )}
-
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="px-5 sm:px-6">ชื่อพนักงาน</TableHead>
-                <TableHead>วันที่</TableHead>
-                <TableHead>เวลาเข้า</TableHead>
-                <TableHead>เวลาออก</TableHead>
-                <TableHead>ชั่วโมง</TableHead>
-                <TableHead className="px-5 sm:px-6">สถานะ</TableHead>
+                <TableHead className="px-5 sm:px-6">พนักงาน</TableHead>
+                <TableHead className="text-right">มีบันทึก</TableHead>
+                <TableHead className="text-right">ชั่วโมงรวม</TableHead>
+                <TableHead className="text-right">ไม่มีข้อมูล</TableHead>
+                <TableHead className="text-right">ลา</TableHead>
+                <TableHead className="text-right">แก้ไข</TableHead>
+                <TableHead>การรับรอง</TableHead>
+                <TableHead className="px-5 text-right sm:px-6">รายงาน</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {ledger.map((row) => (
-                <TableRow key={`${row.employeeId}-${row.workDate}`} className="print-row">
-                  <TableCell className="px-5 sm:px-6">
-                    <strong className="block text-sm font-medium text-slate-800">{row.employeeName}</strong>
-                    <small className="mt-1 block text-xs text-slate-400">
-                      {row.employeeCode ?? "ไม่มีรหัสพนักงาน"}
-                    </small>
+              {rows.map(({ report, latest, state }) => {
+                const { summary } = report;
+                const badge = STATE_BADGE[state];
+                return (
+                  <TableRow key={report.employee.id}>
+                    <TableCell className="px-5 sm:px-6">
+                      <strong className="block text-sm font-medium text-slate-800">{report.employee.name}</strong>
+                      <small className="mt-0.5 block text-xs text-slate-400">
+                        {report.employee.code ?? "ไม่มีรหัสพนักงาน"}
+                      </small>
+                      {(summary.invalidDays > 0 || summary.incompleteDays > 0) && (
+                        <small className="mt-1 flex items-center gap-1 text-[11px] text-rose-700">
+                          <AlertTriangle className="size-3" />
+                          {[
+                            summary.invalidDays > 0 && `เวลาไม่ถูกต้อง ${summary.invalidDays} วัน`,
+                            summary.incompleteDays > 0 && `ไม่มีเวลาออก ${summary.incompleteDays} วัน`,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}{" "}
+                          — ตรวจสอบก่อนรับรอง
+                        </small>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{summary.recordedDays} วัน</TableCell>
+                    <TableCell className="text-right font-mono text-sm">{formatTotal(summary.totalMinutes)}</TableCell>
+                    <TableCell
+                      className={cn("text-right tabular-nums", summary.noRecordDays > 0 && "text-rose-700")}
+                    >
+                      {summary.noRecordDays}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{summary.leaveDays}</TableCell>
+                    <TableCell className={cn("text-right tabular-nums", summary.editedCount > 0 && "text-sky-700")}>
+                      {summary.editedCount}
+                    </TableCell>
+                    <TableCell>
+                      <span
+                        className={cn(
+                          "inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ring-1",
+                          badge.className
+                        )}
+                      >
+                        {badge.label}
+                      </span>
+                      {latest && (
+                        <small className="mt-1 block text-[11px] text-slate-400">
+                          {latest.approver_name} · {formatThaiDateTime(latest.approved_at)}
+                        </small>
+                      )}
+                    </TableCell>
+                    <TableCell className="px-5 sm:px-6">
+                      <div className="flex justify-end gap-2">
+                        <a
+                          aria-label={`ดาวน์โหลด CSV ของ ${report.employee.name}`}
+                          className={buttonVariants({ variant: "ghost", size: "sm" })}
+                          href={csvHref(month, report.employee.id)}
+                        >
+                          CSV
+                        </a>
+                        <Link
+                          className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1.5")}
+                          href={reportHref(month, report.employee.id)}
+                        >
+                          <FileText className="size-4" />
+                          {state === "approved" ? "เปิดรายงาน" : "ตรวจสอบและรับรอง"}
+                        </Link>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {rows.length === 0 && !errorMessage && (
+                <TableRow>
+                  <TableCell colSpan={8} className="h-32 text-center text-sm text-slate-500">
+                    ไม่มีพนักงานที่ใช้งานอยู่
                   </TableCell>
-                  <TableCell>{formatThaiDate(row.workDate)}</TableCell>
-                  <TableCell className="font-mono">{formatTime(row.clockInAt)}</TableCell>
-                  <TableCell className="font-mono">{formatTime(row.clockOutAt)}</TableCell>
-                  <TableCell className="font-mono">{formatHours(row.totalMinutes)}</TableCell>
-                  <TableCell className="px-5 sm:px-6">{row.status}</TableCell>
                 </TableRow>
-              ))}
+              )}
             </TableBody>
           </Table>
-
-          <div className="print-signature hidden px-8 py-12 text-sm text-slate-950">
-            <p>ลงชื่อ .................................................... ผู้รับรอง</p>
-            <p className="mt-6">วันที่ ....................................................</p>
-          </div>
         </section>
       </div>
     </main>

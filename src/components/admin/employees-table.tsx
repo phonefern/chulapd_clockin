@@ -48,6 +48,7 @@ export type Employee = {
   employee_code: string | null;
   name: string;
   display_name: string | null;
+  department: string | null;
   line_user_id: string | null;
   role: string;
   active: boolean;
@@ -75,6 +76,7 @@ export type TodayAttendance = {
 type EditForm = {
   display_name: string;
   employee_code: string;
+  department: string;
   role: string;
   active: boolean;
   reminders_enabled: boolean;
@@ -94,6 +96,7 @@ function emptyForm(employee: Employee): EditForm {
   return {
     display_name: employee.display_name ?? "",
     employee_code: employee.employee_code ?? "",
+    department: employee.department ?? "",
     role: employee.role,
     active: employee.active,
     reminders_enabled: employee.reminders_enabled,
@@ -239,6 +242,7 @@ export function EmployeesTable({
         body: JSON.stringify({
           display_name: form.display_name.trim() === "" ? null : form.display_name.trim(),
           employee_code: form.employee_code,
+          department: form.department,
           role: form.role,
           active: form.active,
           reminders_enabled: form.reminders_enabled,
@@ -362,19 +366,19 @@ export function EmployeesTable({
   return (
     <>
       <section className="mb-7 grid gap-3 sm:grid-cols-3" aria-label="สรุปพนักงาน">
-        <Card className="border-slate-200 bg-white shadow-sm">
+        <Card className="border-slate-200 bg-white py-0 shadow-sm">
           <CardContent className="p-5">
             <p className="text-xs text-slate-500">พนักงานทั้งหมด</p>
             <p className="mt-1 text-2xl font-semibold text-slate-950">{employees.length}</p>
           </CardContent>
         </Card>
-        <Card className="border-slate-200 bg-white shadow-sm">
+        <Card className="border-slate-200 bg-white py-0 shadow-sm">
           <CardContent className="p-5">
             <p className="text-xs text-slate-500">ใช้งาน</p>
             <p className="mt-1 text-2xl font-semibold text-slate-950">{activeCount}</p>
           </CardContent>
         </Card>
-        <Card className="border-slate-200 bg-white shadow-sm">
+        <Card className="border-slate-200 bg-white py-0 shadow-sm">
           <CardContent className="p-5">
             <p className="text-xs text-slate-500">ผู้ดูแลระบบ</p>
             <p className="mt-1 text-2xl font-semibold text-slate-950">{adminCount}</p>
@@ -526,6 +530,15 @@ export function EmployeesTable({
                   id="employee_code"
                   value={form.employee_code}
                   onChange={(e) => setForm({ ...form, employee_code: e.target.value })}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="department">หน่วยงาน</Label>
+                <Input
+                  id="department"
+                  value={form.department}
+                  onChange={(e) => setForm({ ...form, department: e.target.value })}
+                  placeholder="แสดงบนรายงานรับรอง (เว้นว่าง = ศูนย์พาร์กินสันฯ)"
                 />
               </div>
               <div className="grid gap-1.5">

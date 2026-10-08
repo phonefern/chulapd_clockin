@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("employees")
-    .select("id, employee_code, name, display_name, line_user_id, role, active, reminders_enabled, created_at")
+    .select("id, employee_code, name, display_name, department, line_user_id, role, active, reminders_enabled, created_at")
     .order("created_at", { ascending: true });
 
   if (error) {
